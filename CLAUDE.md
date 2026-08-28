@@ -4,16 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-This repository is a **fresh `vcmplugin create` scaffold** — `src/index.ts` still contains
-the generated boilerplate (a `VcsPlugin` whose hooks only `console.log`). Nothing of the
-feature described below is implemented yet.
+Phases 1-6 of the plan are implemented. `@geoportallux/feature-info-templates` is consumed
+through a `file:` dependency on the sibling `luxembourg-geoportail` checkout, because that
+package is not published yet (Plan A phase 6). `.npmrc` sets `install-links=true` so npm
+copies rather than symlinks it — a symlink whose realpath is outside the project root trips
+Vite's dev server `fs.allow`.
 
-The work to be done is specified in
-`/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`
-("Plan B", phases 1–7). **Read it before implementing anything here** — it contains the
-verified request contract, the VC Map integration points with file/line references, and the
-open decisions. Its companion, `docs/plan-feature-info-templates.md` ("Plan A"), describes
-the npm package this plugin renders with; phases 0–5 of that plan are already done.
+Not implemented, and deliberately so:
+
+- **Phase 7 enhancements** — highlighting the returned geometries, routing 3D building
+  clicks through the lux templates, `fid` deep links, 3D elevation profile.
+- **The 3dviewer deployment entry** (plan phase 6.3). `config/lux.config.json` in the
+  `3dviewer` repo is untouched: its `plugins` array installs from npm, and pointing it at an
+  unpublished plugin while flipping themesync's `useLuxFeatureInfoTemplates` on would leave
+  the WMS layers referencing a feature info view that does not exist, breaking 2D feature
+  info. The exact config block to add is in this repo's README.
+
+Reference: `/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`
+("Plan B") and its companion `docs/plan-feature-info-templates.md` ("Plan A").
 
 ## Commands
 
@@ -40,7 +48,7 @@ npx vitest run tests/vcsPluginInterface.spec.ts
 `vcmplugin serve` refuses to start unless `@vcmap/ui` is present in `node_modules` — it is
 declared as a _peer_ dependency, so it must be installed locally (it is).
 
-## What this plugin does (target architecture)
+## What this plugin does
 
 Reproduces the 2D geoportail's per-position GetFeatureInfo inside the VC Map 3D viewer:
 one click → **one aggregated query over all visible queryable lux layers** → a window
@@ -53,40 +61,57 @@ picked), so it cannot express "query every visible layer at this position, inclu
 empty-space clicks". The `featureInfoClassRegistry` is still the right place for the
 rendering/lifecycle half, so the plugin uses both.
 
-Intended pieces:
+The pieces, one module each:
 
-- **Query service** — click `event.position` is EPSG:3857 in both OL and Cesium maps;
-  transform to EPSG:2169 (`Projection` from `@vcmap/core`), then build the geoportail's
-  coordinate-path GET request (`layers`, `box1`/`box2` ±10 m/±1 m, `srs`, `zoom` derived
-  from camera height, synthetic `BBOX`/`WIDTH`/`HEIGHT`/`X`/`Y`) against `luxGetInfoUrl`.
-  Layer list = `app.layers` where `properties.luxId` is set, active, and queryable.
-- **Interaction** — `eventHandler.addPersistentInteraction` at default index 3, gated on
-  the standard `featureInfo` toolbox toggle; passes Cesium3DTile feature clicks through to
-  the existing balloon, otherwise runs the aggregated query and stops propagation.
-- **Renderer** — a `LuxTemplateFeatureInfoView` registered in `app.featureInfoClassRegistry`
-  during `initialize()`, selected explicitly via `app.featureInfo.selectFeature(feature,
-position, windowPosition, luxView)` so the built-in window/selection/toolbox lifecycle
-  comes for free.
-- **Window component** — a plain wrapper that `provide()`s `LUX_TPL_CONTEXT` and
-  `LUX_TPL_I18N` in `setup()`, sets `.lux-tpl-root` on its root element, imports the
-  package CSS, and renders the shared dispatcher. **No child Vue app / `createApp` mount
-  is needed** — that remains the documented escalation path (and the prerequisite for a
-  shadow-DOM mount) if Vuetify styles bleed in.
+- **`luxQueryService.ts`** — collects eligible layers, builds the request, post-processes
+  the response. `event.position` is EPSG:3857 in both OL and Cesium maps and is transformed
+  to EPSG:2169; `box1`/`box2` are ±10 m/±1 m boxes in 2169 while `srs` announces 3857 (the
+  server's contract, verified against the live backend), and
+  `WIDTH`/`HEIGHT`/`X`/`Y`/`BBOX` describe a synthetic north-up viewport centred on the
+  point, with `zoom` from `map.getCurrentResolution()`. Eligible layers are active,
+  non-transparent, carry `properties.luxId` and are flagged by `properties.luxQueryable` —
+  falling back to `allowPicking` on 2D layers for a themesync older than 1.6.
+- **`luxFeatureInfoInteraction.ts`** — `eventHandler.addPersistentInteraction()` (default
+  index, i.e. after the four built-ins and before the exclusive `FeatureInfoInteraction`),
+  gated on `toolboxManager.get('featureInfo').action.active`. Passes through any feature
+  already served by another view, otherwise queries and stops propagation on a hit. An
+  empty result deliberately falls through so the built-in interaction clears the selection.
+  Also owns `createAnchorLayer()` — see below.
+- **`luxTemplateFeatureInfoView.ts`** — registered in `app.featureInfoClassRegistry` during
+  `initialize()`; the interaction sets `view.content` and calls
+  `featureInfo.selectFeature(anchor, position, windowPosition, view)`, so the built-in
+  window/selection/toolbox lifecycle comes for free.
+- **`LuxFeatureInfoWindow.vue`** — a plain wrapper that `provide()`s `LUX_TPL_CONTEXT` and
+  `LUX_TPL_I18N` in `setup()` (reaching the plugin via `inject('vcsApp')` +
+  `plugins.getByKey`, because a config-defined view cannot hand them down), sets
+  `.lux-tpl-root`, imports the package CSS, renders the shared dispatcher. **No child Vue
+  app / `createApp` mount** — that remains the documented escalation path (and the
+  prerequisite for a shadow-DOM mount) if Vuetify styles bleed in.
+- **`luxTplRuntime.ts`** — a dedicated i18next instance (not the singleton) with
+  `i18next-http-backend`, the `LuxTplContext`, and a `localeChanged` listener.
+
+### The anchor layer
+
+`featureInfo.selectFeature()` insists on a feature belonging to a layer of this app, but an
+aggregated result belongs to a _position_. Each result is therefore anchored on a throwaway
+point feature in a never-activated, non-pickable `VectorLayer`. Being inactive, that layer
+has no map implementation, so the highlight VC Map applies to the anchor renders nowhere.
+Activating it is the natural starting point for phase 7 highlighting.
 
 ### The templates package contract
 
-`@geoportallux/feature-info-templates` (not yet a dependency here; lives in the
-`luxembourg-geoportail` repo at `packages/feature-info-templates`, Phase 6 "publish" not
-started) exposes exactly one host dependency surface:
+`@geoportallux/feature-info-templates` (lives in the `luxembourg-geoportail` repo at
+`packages/feature-info-templates`; consumed here through a `file:` dependency until it is
+published) exposes exactly one host dependency surface:
 
 - `provideLuxTplContext(ctx)` / `LUX_TPL_CONTEXT` with `{ config, user, notify,
 profileComponent?, isThemeAvailable? }`
 - `createLuxTplI18n(i18next)` / `LUX_TPL_I18N` / `useLuxTranslation` — lib-owned, so the
   package does **not** depend on `i18next-vue` (whose `install()` would overwrite VC Map's
   vue-i18n `$t` global)
-- `createLuxTplI18next(loadPath)` — the exact geoportail i18next init contract plus
-  tooltip-fallback hydration; locales come from the deployed geoportail's
-  `assets/locales/{ns}.{lng}.json`
+- `createLuxTplI18next(instance, loadPath)` — the exact geoportail i18next init contract
+  plus tooltip-fallback hydration; the caller supplies the instance so it owns the backend
+  plugin. Locales come from the deployed geoportail's `assets/locales/{ns}.{lng}.json`
 - `getTemplateComponent()` + every template component, and the `FeatureInfoJSON` models
 
 Wire `user` from the auth plugin's reactive `userState` (optional dependency, anonymous

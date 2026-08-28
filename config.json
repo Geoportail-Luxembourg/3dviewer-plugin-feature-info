@@ -1,3 +1,4 @@
 {
-  "name": "@geoportallux/lux-3dviewer-plugin-feature-info"
+  "name": "@geoportallux/lux-3dviewer-plugin-feature-info",
+  "credentials": "include"
 }

@@ -1,17 +1,49 @@
 import type { VcsPlugin, VcsUiApp, PluginConfigEditor } from '@vcmap/ui';
+import type { VectorLayer } from '@vcmap/core';
+import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 import { name, version, mapVersion } from '../package.json';
+import {
+  I18N_NAMESPACE,
+  LUX_FEATURE_INFO_VIEW_NAME,
+  type PluginConfig,
+  type PluginState,
+} from './model.js';
+import getDefaultOptions from './defaultOptions.js';
+import { getLuxProjection } from './luxProjection.js';
+import LuxTemplateFeatureInfoView from './luxTemplateFeatureInfoView.js';
+import LuxFeatureInfoInteraction, {
+  createAnchorLayer,
+} from './luxFeatureInfoInteraction.js';
+import { createLuxTplRuntime } from './luxTplRuntime.js';
+import type { LuxTplRuntime } from './luxTplRuntime.js';
+import { queryLuxFeatureInfoByFid } from './luxQueryService.js';
+import i18n from './i18n.js';
 
-type PluginConfig = Record<never, never>;
-type PluginState = Record<never, never>;
+export type LuxFeatureInfoPlugin = VcsPlugin<PluginConfig, PluginState> & {
+  /** Context and i18n the window component provides to the templates. */
+  readonly tplRuntime: LuxTplRuntime | null;
+  /** Run the `fid` query behind a permalink shared with the 2D portal. */
+  queryByFid(fid: string): Promise<FeatureInfoJSON[]>;
+};
 
-type MyPlugin = VcsPlugin<PluginConfig, PluginState>;
+export default function lux3dviewerPluginFeatureInfo(
+  config: Partial<PluginConfig>,
+): LuxFeatureInfoPlugin {
+  const pluginConfig: PluginConfig = {
+    ...getDefaultOptions(),
+    ...config,
+    templatesConfig: {
+      ...getDefaultOptions().templatesConfig,
+      ...config.templatesConfig,
+    },
+  };
 
-export default function plugin(
-  config: PluginConfig,
-  baseUrl: string,
-): MyPlugin {
-  // eslint-disable-next-line no-console
-  console.log(config, baseUrl);
+  let app: VcsUiApp | null = null;
+  let runtime: LuxTplRuntime | null = null;
+  let anchorLayer: VectorLayer | null = null;
+  let removeInteraction: (() => number) | null = null;
+  let ownedView: LuxTemplateFeatureInfoView | null = null;
+
   return {
     get name(): string {
       return name;
@@ -22,57 +54,96 @@ export default function plugin(
     get mapVersion(): string {
       return mapVersion;
     },
-    initialize(vcsUiApp: VcsUiApp, state?: PluginState): Promise<void> {
-      // eslint-disable-next-line no-console
-      console.log(
-        'Called before loading the rest of the current context. Passed in the containing Vcs UI App ',
-        vcsUiApp,
-        state,
-      );
-      return Promise.resolve();
+    get tplRuntime(): LuxTplRuntime | null {
+      return runtime;
     },
+
+    async queryByFid(fid: string): Promise<FeatureInfoJSON[]> {
+      if (!app) {
+        return [];
+      }
+      return queryLuxFeatureInfoByFid(app, pluginConfig, fid);
+    },
+
+    /**
+     * Registration happens here because plugins are parsed before a module's
+     * `featureInfo` items: a module may then reference
+     * `LuxTemplateFeatureInfoView` by class name. Plugins also initialize
+     * serially in config order, so this plugin has to be listed before
+     * themesync, whose layers carry the `featureInfo` property pointing at the
+     * view.
+     */
+    async initialize(vcsUiApp: VcsUiApp): Promise<void> {
+      app = vcsUiApp;
+      getLuxProjection();
+      app.featureInfoClassRegistry.registerClass(
+        app.dynamicModuleId,
+        LuxTemplateFeatureInfoView.className,
+        LuxTemplateFeatureInfoView,
+      );
+      runtime = await createLuxTplRuntime(app, pluginConfig);
+    },
+
     onVcsAppMounted(vcsUiApp: VcsUiApp): void {
-      // eslint-disable-next-line no-console
-      console.log(
-        'Called when the root UI component is mounted and managers are ready to accept components',
-        vcsUiApp,
+      app = vcsUiApp;
+      // A module config may define its own instance; only fall back to a
+      // default one when it did not.
+      if (!app.featureInfo.hasKey(LUX_FEATURE_INFO_VIEW_NAME)) {
+        ownedView = new LuxTemplateFeatureInfoView({
+          name: LUX_FEATURE_INFO_VIEW_NAME,
+        });
+        app.featureInfo.add(ownedView);
+      }
+      const view = app.featureInfo.getByKey(
+        LUX_FEATURE_INFO_VIEW_NAME,
+      ) as LuxTemplateFeatureInfoView;
+      anchorLayer = createAnchorLayer(app);
+      removeInteraction = app.maps.eventHandler.addPersistentInteraction(
+        new LuxFeatureInfoInteraction(app, view, anchorLayer, pluginConfig),
       );
     },
-    /**
-     * should return all default values of the configuration
-     */
-    getDefaultOptions(): PluginConfig {
-      return {};
-    },
-    /**
-     * should return the plugin's serialization excluding all default values
-     */
+
+    getDefaultOptions,
+
     toJSON(): PluginConfig {
-      // eslint-disable-next-line no-console
-      console.log('Called when serializing this plugin instance');
+      return { ...pluginConfig };
+    },
+
+    getState(): PluginState {
       return {};
     },
-    /**
-     * should return the plugins state
-     * @param {boolean} forUrl
-     * @returns {PluginState}
-     */
-    getState(forUrl?: boolean): PluginState {
-      // eslint-disable-next-line no-console
-      console.log('Called when collecting state, e.g. for create link', forUrl);
-      return {
-        prop: '*',
-      };
-    },
-    /**
-     * components for configuring the plugin and/ or custom items defined by the plugin
-     */
+
     getConfigEditors(): PluginConfigEditor<object>[] {
       return [];
     },
+
     destroy(): void {
-      // eslint-disable-next-line no-console
-      console.log('hook to cleanup');
+      removeInteraction?.();
+      removeInteraction = null;
+      runtime?.destroy();
+      runtime = null;
+      if (app) {
+        if (ownedView) {
+          app.featureInfo.remove(ownedView);
+          ownedView.destroy();
+        }
+        app.featureInfoClassRegistry.unregisterClass(
+          app.dynamicModuleId,
+          LuxTemplateFeatureInfoView.className,
+        );
+        if (anchorLayer) {
+          app.layers.remove(anchorLayer);
+          anchorLayer.destroy();
+        }
+      }
+      ownedView = null;
+      anchorLayer = null;
+      app = null;
     },
+
+    i18n,
   };
 }
+
+export { I18N_NAMESPACE, LUX_FEATURE_INFO_VIEW_NAME };
+export type { PluginConfig, PluginState };

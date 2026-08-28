@@ -31,3 +31,6 @@ docs
 
 # index.html (prettier does not take modern html 5 rules that closing tags for void elements should be avoided)
 assets/index.html
+
+# captured backend responses, kept verbatim
+tests/fixtures/
