@@ -53,7 +53,8 @@ export function isParcelLayerIdent(value?: string | number | null): boolean {
 }
 
 /**
- * Whether themesync marked this layer as queryable.
+ * Whether this is a lux layer the aggregated query covers, regardless of
+ * whether it happens to be active right now.
  *
  * `properties.luxQueryable` is written by themesync from
  * `metadata.is_queryable`. Older themesync builds carried that same bit only as
@@ -61,12 +62,12 @@ export function isParcelLayerIdent(value?: string | number | null): boolean {
  * because themesync forces `allowPicking` on for 3D tilesets, whose ids the 2D
  * GetFeatureInfo backend does not serve.
  */
-function isQueryable(layer: Layer): boolean {
-  const { luxQueryable, is3DLayer } = layer.properties ?? {};
-  if (luxQueryable !== undefined) {
-    return !!luxQueryable;
+export function isLuxQueryLayer(layer: Layer): boolean {
+  const { luxId, luxQueryable, is3DLayer } = layer.properties ?? {};
+  if (luxId == null || is3DLayer) {
+    return false;
   }
-  return !is3DLayer && layer.allowPicking;
+  return luxQueryable !== undefined ? !!luxQueryable : layer.allowPicking;
 }
 
 /**
@@ -80,15 +81,11 @@ export function collectQueryableLayers(app: VcsUiApp): LuxQueryLayer[] {
   const byLuxId = new Map<string, LuxQueryLayer>();
   const layers = [...app.layers].reverse();
   layers.forEach((layer: Layer) => {
-    const luxId = layer.properties?.luxId as string | number | undefined;
     const opacity = (layer as Layer & { opacity?: number }).opacity ?? 1;
-    if (luxId == null || !layer.active || opacity <= 0) {
+    if (!layer.active || opacity <= 0 || !isLuxQueryLayer(layer)) {
       return;
     }
-    if (!isQueryable(layer)) {
-      return;
-    }
-    const key = String(luxId);
+    const key = String(layer.properties.luxId);
     if (!byLuxId.has(key)) {
       byLuxId.set(key, { luxId: key, label: layer.name });
     }

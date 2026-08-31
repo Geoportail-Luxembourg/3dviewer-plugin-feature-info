@@ -26,6 +26,7 @@ Reference: `/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3
 ## Commands
 
 ```bash
+npm run preview -- --vcm https://3d-staging.geoportail.lu/   # see "Running it"
 npm start          # Dev server on :8008 (vcmplugin serve). --appConfig <file|url> to
                    # load a VC Map app config; -c <config> to override the plugin config
 npm run build      # Build plugin to dist/ (vcmplugin build)
@@ -47,6 +48,38 @@ npx vitest run tests/vcsPluginInterface.spec.ts
 
 `vcmplugin serve` refuses to start unless `@vcmap/ui` is present in `node_modules` — it is
 declared as a _peer_ dependency, so it must be installed locally (it is).
+
+## Running it
+
+`vcmplugin preview --vcm <url>` — it serves the local `dist/index.js` and proxies
+`/assets`, `/plugins`, `/style.css` plus `app.config.json` to a deployed viewer, so
+themesync and the other plugins come from the deployment. Do **not** build a local app
+config with mock lux layers; that was tried and removed as unnecessary.
+
+Three facts, each of which cost a debugging session:
+
+- **A CORS bypass extension is required**, and not because of this plugin: the geoportail
+  answers `localhost` with `Access-Control-Allow-Origin: *` _and_
+  `Access-Control-Allow-Credentials: true`, which browsers reject, and every lux plugin
+  sends `credentials: include`. Themesync's `/themes` call fails identically, so without a
+  bypass the viewer has no layers and nothing is queryable.
+- **`--watch` does not reach the browser.** It rebuilds `dist/`, but the dev server keeps
+  serving the previously transformed module; a hard reload with the cache disabled still
+  gets the old bundle. Restart `npm run preview` after every edit. Verified by byte-diffing
+  the on-disk bundle against the served one.
+- **No 2D lux layer is active on startup**, so `collectQueryableLayers()` returns `[]` and
+  the click is a no-op until a layer is switched on in the content tree.
+
+Two traps in the plugin itself, both invisible to lint/type-check/tests:
+
+- **Never `import '../config.json'`.** The dev server reserves `/config*` for module configs,
+  so the import 404s and the whole plugin fails to load in dev (it works in the build,
+  which inlines it). Defaults belong in `src/defaultOptions.ts`; a deployed VC Map reads a
+  plugin's config from the app config only, never from its shipped `config.json`.
+- **The templates need a `v-dompurify-html` directive** that the package neither ships nor
+  declares — the geoportail registers it app-wide in `main.ts`. `LuxFeatureInfoWindow.vue`
+  registers it on the shared Vue app. Without it, six templates (`default` included) render
+  attribute labels but empty values.
 
 ## What this plugin does
 
@@ -73,10 +106,16 @@ The pieces, one module each:
   falling back to `allowPicking` on 2D layers for a themesync older than 1.6.
 - **`luxFeatureInfoInteraction.ts`** — `eventHandler.addPersistentInteraction()` (default
   index, i.e. after the four built-ins and before the exclusive `FeatureInfoInteraction`),
-  gated on `toolboxManager.get('featureInfo').action.active`. Passes through any feature
-  already served by another view, otherwise queries and stops propagation on a hit. An
-  empty result deliberately falls through so the built-in interaction clears the selection.
-  Also owns `createAnchorLayer()` — see below.
+  gated on `toolboxManager.get('featureInfo').action.active`. Queries and stops propagation
+  on a hit; an empty result deliberately falls through so the built-in interaction clears
+  the selection. Also owns `createAnchorLayer()` — see below.
+  **Ownership rule:** a picked feature is foreign only when it is a Cesium3DTile feature,
+  carries `featureInfoViewSymbol`, or sits on a layer `isLuxQueryLayer()` rejects. A feature
+  on a lux queryable layer is ours _whatever_ `properties.featureInfo` names — with
+  `useLuxFeatureInfoTemplates` off, themesync leaves a `WMSFeatureProvider` on those layers,
+  so clicks arrive with a provided feature attached and deferring to `featureInfo2d` would
+  silently hand them to the 2D iframe. It only broke when exactly one layer matched: two or
+  more hits get wrapped in a synthetic cluster feature that belongs to no layer.
 - **`luxTemplateFeatureInfoView.ts`** — registered in `app.featureInfoClassRegistry` during
   `initialize()`; the interaction sets `view.content` and calls
   `featureInfo.selectFeature(anchor, position, windowPosition, view)`, so the built-in
@@ -156,9 +195,25 @@ initialize serially in config order, so this plugin must be listed **before** th
 - Tests run in jsdom; `tests/setup.js` mocks ResizeObserver + canvas and sets
   `window.CESIUM_BASE_URL`.
 
-## Known risks to validate early
+## Verified, and still open
 
-- **CORS** on `https://map.geoportail.lu/getfeatureinfo` and `/assets/locales` from the 3D
-  origin. Themesync's `TrustedServers`/proxy pattern is the fallback.
-- `zoom` parameter semantics when derived from Cesium camera height.
-- Vuetify style bleed _into_ the templates (mitigated by `.lux-tpl-root` scoping).
+Checked against the live backend and a real browser session driven over CDP against
+`https://3d-staging.geoportail.lu` (themesync 1.5.2, `useLuxFeatureInfoTemplates` absent):
+
+- **CORS is fine from the deployed origin.** `/getfeatureinfo` and `/assets/locales/*.json`
+  answer `https://3d.geoportail.lu` with a properly echoed origin and
+  `Access-Control-Allow-Credentials: true`. Themesync's `TrustedServers`/proxy pattern is
+  not needed. From `localhost` they answer `*` + credentials instead, which browsers
+  reject — see "Running it".
+- **The request contract holds.** The captured response is in `tests/fixtures/`.
+- **End to end works against an unmodified deployment**: one click, one aggregated request
+  over every active queryable layer, templates rendered in a VC Map window, no console
+  errors — with themesync 1.5.2 and no config change, via the `allowPicking` fallback.
+
+Still unvalidated:
+
+- `zoom` semantics when derived from a tilted Cesium camera (the backend accepts the value;
+  nothing confirms it is interpreted as the 2D portal intends).
+- Vuetify style bleed _into_ the templates — never observed, but only `default.html` and
+  `parcels.html` have been exercised in 3D.
+- Every other template.

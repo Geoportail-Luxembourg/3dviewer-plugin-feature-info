@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { VcsUiApp } from '@vcmap/ui';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
+import type { Layer } from '@vcmap/core';
 import {
   buildPositionParams,
   collectQueryableLayers,
+  isLuxQueryLayer,
   isParcelLayerIdent,
   postProcessResponse,
   resolutionToZoom,
@@ -116,6 +118,67 @@ describe('lux query service', () => {
         'topSharingId',
         'middle',
       ]);
+    });
+  });
+
+  describe('isLuxQueryLayer', () => {
+    /*
+     * This predicate also decides ownership of a *picked* feature: a feature on
+     * a layer the aggregated query covers belongs to this plugin even when the
+     * layer still names `featureInfo2d`, which is what themesync writes until
+     * `useLuxFeatureInfoTemplates` is turned on. Getting that wrong hands single
+     * layer hits to the 2D iframe.
+     */
+    const asLayer = (l: FakeLayer): Layer => l as unknown as Layer;
+
+    it('covers a lux 2D layer flagged queryable', () => {
+      expect(
+        isLuxQueryLayer(
+          asLayer(fakeLayer('a', { luxId: 1, luxQueryable: true })),
+        ),
+      ).toBe(true);
+    });
+
+    it('covers a lux 2D layer of a pre-luxQueryable themesync via allowPicking', () => {
+      expect(
+        isLuxQueryLayer(
+          asLayer(fakeLayer('a', { luxId: 1 }, { allowPicking: true })),
+        ),
+      ).toBe(true);
+    });
+
+    it('ignores 3D layers, non-lux layers and layers flagged not queryable', () => {
+      expect(
+        isLuxQueryLayer(
+          asLayer(
+            fakeLayer(
+              'tileset',
+              { luxId: 1, luxQueryable: true, is3DLayer: true },
+              { allowPicking: true },
+            ),
+          ),
+        ),
+      ).toBe(false);
+      expect(
+        isLuxQueryLayer(
+          asLayer(fakeLayer('foreign', {}, { allowPicking: true })),
+        ),
+      ).toBe(false);
+      expect(
+        isLuxQueryLayer(
+          asLayer(fakeLayer('a', { luxId: 1, luxQueryable: false })),
+        ),
+      ).toBe(false);
+    });
+
+    it('does not depend on the layer being active', () => {
+      expect(
+        isLuxQueryLayer(
+          asLayer(
+            fakeLayer('a', { luxId: 1, luxQueryable: true }, { active: false }),
+          ),
+        ),
+      ).toBe(true);
     });
   });
 

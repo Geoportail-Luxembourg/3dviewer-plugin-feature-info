@@ -111,12 +111,44 @@ backend:
 ## Development
 
 ```bash
-npm start          # dev server on :8008; --appConfig <file|url> to load an app config
+npm run preview -- --vcm https://3d-staging.geoportail.lu/   # see below
+npm start          # bare dev server on :8008 (@vcmap/ui's app config, no lux layers)
 npm run build      # build to dist/
 npm test           # vitest
 npm run lint       # eslint + prettier
 npm run type-check # vue-tsc
 ```
+
+### Running against a deployed viewer
+
+`vcmplugin preview --vcm <url>` is the way to develop this plugin. It serves the locally
+built `dist/index.js`, proxies `/assets`, `/plugins` and `/style.css` to the deployed
+viewer, and fetches its `app.config.json` — so themesync, auth and every other plugin come
+from the deployment and only this plugin is local. No app config or mock layers are needed
+here.
+
+```bash
+npm run preview -- --vcm https://3d-staging.geoportail.lu/   # http://localhost:5005
+```
+
+Three things to know:
+
+- **A CORS bypass is required.** Not for this plugin specifically: the geoportail answers a
+  request from `localhost` with `Access-Control-Allow-Origin: *` together with
+  `Access-Control-Allow-Credentials: true`, a combination browsers reject, and every lux
+  plugin sends `credentials: include`. Themesync's own `/themes` call fails the same way, so
+  without a bypass there are no layers at all. A browser extension that rewrites the CORS
+  headers is the simplest fix; requests from `https://3d.geoportail.lu` itself get a
+  properly echoed origin and need nothing.
+- **Enable a queryable layer first.** The deployed viewer starts with no 2D lux layer
+  active, and the aggregated query has nothing to ask about until one is on. Pick any layer
+  from the content tree, then click the map.
+- **Restart preview after editing.** `--watch` rebuilds `dist/`, but the dev server keeps
+  serving the previously transformed copy — a browser reload, even with the cache disabled,
+  does not pick the change up. Stop and restart `npm run preview` instead.
+
+It also works against production (`--vcm https://3d.geoportail.lu/`); staging is the safer
+default.
 
 `@geoportallux/feature-info-templates` is not published yet. Until it is, it is installed
 from the sibling checkout via a `file:` dependency, with `install-links=true` in `.npmrc` so

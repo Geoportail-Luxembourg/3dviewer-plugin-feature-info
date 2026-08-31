@@ -18,7 +18,10 @@ import { getLogger } from '@vcsuite/logger';
 import { featureInfoViewSymbol, NotificationType } from '@vcmap/ui';
 import type { VcsUiApp } from '@vcmap/ui';
 import type { Coordinate } from 'ol/coordinate.js';
-import { queryLuxFeatureInfoAtPosition } from './luxQueryService.js';
+import {
+  isLuxQueryLayer,
+  queryLuxFeatureInfoAtPosition,
+} from './luxQueryService.js';
 import type LuxTemplateFeatureInfoView from './luxTemplateFeatureInfoView.js';
 import {
   I18N_NAMESPACE,
@@ -56,6 +59,15 @@ export function createAnchorLayer(app: VcsUiApp): VectorLayer {
  * Whether a picked feature is already served by someone else's feature info
  * view — a 3D tileset's balloon, a search result, another plugin's layer. Those
  * clicks belong to VC Map's own exclusive interaction further down the chain.
+ *
+ * A feature on a lux layer this plugin queries is explicitly *not* foreign,
+ * whatever `properties.featureInfo` names. Themesync only points those layers at
+ * `luxFeatureInfo` once `useLuxFeatureInfoTemplates` is on; until then they say
+ * `featureInfo2d` and still carry a `WMSFeatureProvider`, so a click can arrive
+ * with a provided feature attached. Deferring to that per-layer view would hand
+ * the click to the 2D iframe and silently disable this plugin — and only when a
+ * single layer matched, because the provider wraps two or more hits into a
+ * synthetic cluster feature belonging to no layer at all.
  */
 function isForeignFeature(app: VcsUiApp, feature: EventFeature): boolean {
   if (
@@ -70,10 +82,12 @@ function isForeignFeature(app: VcsUiApp, feature: EventFeature): boolean {
   const layerName = (feature as unknown as Record<symbol, unknown>)[
     vcsLayerName
   ];
-  const viewName =
-    typeof layerName === 'string'
-      ? app.layers.getByKey(layerName)?.properties?.featureInfo
-      : undefined;
+  const layer =
+    typeof layerName === 'string' ? app.layers.getByKey(layerName) : undefined;
+  if (layer && isLuxQueryLayer(layer)) {
+    return false;
+  }
+  const viewName = layer?.properties?.featureInfo;
   return (
     typeof viewName === 'string' && viewName !== LUX_FEATURE_INFO_VIEW_NAME
   );
