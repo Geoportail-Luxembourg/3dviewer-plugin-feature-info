@@ -10,8 +10,6 @@
   import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
   import '@geoportallux/feature-info-templates/style.css';
   import { name } from '../package.json';
-  import { exportLuxFeature } from './luxFeatureExport.js';
-  import type { LuxExportPayload } from './luxFeatureExport.js';
   import type { LuxFeatureInfoPlugin } from './index.js';
 
   const DOMPURIFY_DIRECTIVE = 'dompurify-html';
@@ -21,6 +19,11 @@
     content: FeatureInfoJSON[];
     /** Permalink the templates offer as "link to this feature". */
     currentUrl: string;
+    /**
+     * Declared so VC Map can match the window against its layer when that
+     * layer is deactivated. Not rendered.
+     */
+    layerName?: string;
   }>();
 
   /*
@@ -52,10 +55,6 @@
   if (vueApp && !vueApp.directive(DOMPURIFY_DIRECTIVE)) {
     vueApp.directive(DOMPURIFY_DIRECTIVE, buildVueDompurifyHTMLDirective());
   }
-
-  function onExport(payload: LuxExportPayload): void {
-    exportLuxFeature(payload);
-  }
 </script>
 
 <template>
@@ -70,7 +69,6 @@
       :key="index"
       :layers="layers"
       :current-url="currentUrl"
-      @export="onExport"
     />
   </div>
 </template>

@@ -1,6 +1,6 @@
 import type { VcsPlugin, VcsUiApp, PluginConfigEditor } from '@vcmap/ui';
-import type { VectorLayer } from '@vcmap/core';
-import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
+import { markVolatile, mercatorProjection, VectorLayer } from '@vcmap/core';
+import type { Layer } from '@vcmap/core';
 import { name, version, mapVersion } from '../package.json';
 import {
   I18N_NAMESPACE,
@@ -10,20 +10,18 @@ import {
 } from './model.js';
 import getDefaultOptions from './defaultOptions.js';
 import { getLuxProjection } from './luxProjection.js';
+import { isLuxQueryLayer } from './luxQueryService.js';
 import LuxTemplateFeatureInfoView from './luxTemplateFeatureInfoView.js';
-import LuxFeatureInfoInteraction, {
-  createAnchorLayer,
-} from './luxFeatureInfoInteraction.js';
+import LuxAggregatedFeatureProvider from './luxAggregatedFeatureProvider.js';
 import { createLuxTplRuntime } from './luxTplRuntime.js';
 import type { LuxTplRuntime } from './luxTplRuntime.js';
-import { queryLuxFeatureInfoByFid } from './luxQueryService.js';
 import i18n from './i18n.js';
+
+const QUERY_LAYER_NAME = 'luxAggregatedFeatureInfo';
 
 export type LuxFeatureInfoPlugin = VcsPlugin<PluginConfig, PluginState> & {
   /** Context and i18n the window component provides to the templates. */
   readonly tplRuntime: LuxTplRuntime | null;
-  /** Run the `fid` query behind a permalink shared with the 2D portal. */
-  queryByFid(fid: string): Promise<FeatureInfoJSON[]>;
 };
 
 export default function lux3dviewerPluginFeatureInfo(
@@ -40,9 +38,37 @@ export default function lux3dviewerPluginFeatureInfo(
 
   let app: VcsUiApp | null = null;
   let runtime: LuxTplRuntime | null = null;
-  let anchorLayer: VectorLayer | null = null;
-  let removeInteraction: (() => number) | null = null;
+  let queryLayer: VectorLayer | null = null;
   let ownedView: LuxTemplateFeatureInfoView | null = null;
+  const listeners: (() => void)[] = [];
+
+  /**
+   * Take over feature info for the lux layers.
+   *
+   * With themesync's `useLuxFeatureInfoTemplates` off, its WMS layers keep a
+   * `text/html` `WMSFeatureProvider`, which fabricates a placeholder feature on
+   * every click *without issuing a request* — that is how the `featureInfo2d`
+   * iframe gets its position. Left in place, each of those placeholders joins
+   * this plugin's envelope feature and VC Map opens its cluster list instead of
+   * the stacked panel, and clicks into empty space stop clearing the selection.
+   *
+   * The provider only exists once a layer has been activated (`WMSLayer`
+   * creates it in `initialize()`), hence the state listener rather than a
+   * one-off sweep.
+   */
+  function claimLayer(layer: Layer): void {
+    if (!isLuxQueryLayer(layer)) {
+      return;
+    }
+    const drop = (): void => {
+      if (layer.featureProvider) {
+        layer.featureProvider.destroy();
+        layer.featureProvider = undefined;
+      }
+    };
+    drop();
+    listeners.push(layer.stateChanged.addEventListener(drop));
+  }
 
   return {
     get name(): string {
@@ -58,20 +84,12 @@ export default function lux3dviewerPluginFeatureInfo(
       return runtime;
     },
 
-    async queryByFid(fid: string): Promise<FeatureInfoJSON[]> {
-      if (!app) {
-        return [];
-      }
-      return queryLuxFeatureInfoByFid(app, pluginConfig, fid);
-    },
-
     /**
      * Registration happens here because plugins are parsed before a module's
      * `featureInfo` items: a module may then reference
      * `LuxTemplateFeatureInfoView` by class name. Plugins also initialize
      * serially in config order, so this plugin has to be listed before
-     * themesync, whose layers carry the `featureInfo` property pointing at the
-     * view.
+     * themesync, whose layers this one claims.
      */
     async initialize(vcsUiApp: VcsUiApp): Promise<void> {
       app = vcsUiApp;
@@ -81,11 +99,14 @@ export default function lux3dviewerPluginFeatureInfo(
         LuxTemplateFeatureInfoView.className,
         LuxTemplateFeatureInfoView,
       );
+      listeners.push(app.layers.added.addEventListener(claimLayer));
       runtime = await createLuxTplRuntime(app, pluginConfig);
     },
 
     onVcsAppMounted(vcsUiApp: VcsUiApp): void {
       app = vcsUiApp;
+      [...app.layers].forEach(claimLayer);
+
       // A module config may define its own instance; only fall back to a
       // default one when it did not.
       if (!app.featureInfo.hasKey(LUX_FEATURE_INFO_VIEW_NAME)) {
@@ -97,10 +118,29 @@ export default function lux3dviewerPluginFeatureInfo(
       const view = app.featureInfo.getByKey(
         LUX_FEATURE_INFO_VIEW_NAME,
       ) as LuxTemplateFeatureInfoView;
-      anchorLayer = createAnchorLayer(app);
-      removeInteraction = app.maps.eventHandler.addPersistentInteraction(
-        new LuxFeatureInfoInteraction(app, view, anchorLayer, pluginConfig),
+
+      /*
+       * `FeatureProviderInteraction` only asks providers of layers that are
+       * *active*, so this one has to be. It renders nothing: the provider gives
+       * its features an empty style, and no feature is ever added to the layer
+       * itself — it exists solely to host the provider and to give
+       * `selectFeature()` the layer it insists a feature must belong to.
+       */
+      queryLayer = new VectorLayer({
+        name: QUERY_LAYER_NAME,
+        projection: mercatorProjection.toJSON(),
+        allowPicking: false,
+      });
+      queryLayer.featureProvider = new LuxAggregatedFeatureProvider(
+        app,
+        pluginConfig,
+        view,
       );
+      markVolatile(queryLayer);
+      app.layers.add(queryLayer);
+      queryLayer.activate().catch(() => {
+        // an inactive layer is simply never asked for features
+      });
     },
 
     getDefaultOptions,
@@ -118,8 +158,10 @@ export default function lux3dviewerPluginFeatureInfo(
     },
 
     destroy(): void {
-      removeInteraction?.();
-      removeInteraction = null;
+      listeners.forEach((cb) => {
+        cb();
+      });
+      listeners.length = 0;
       runtime?.destroy();
       runtime = null;
       if (app) {
@@ -131,13 +173,13 @@ export default function lux3dviewerPluginFeatureInfo(
           app.dynamicModuleId,
           LuxTemplateFeatureInfoView.className,
         );
-        if (anchorLayer) {
-          app.layers.remove(anchorLayer);
-          anchorLayer.destroy();
+        if (queryLayer) {
+          app.layers.remove(queryLayer);
+          queryLayer.destroy();
         }
       }
       ownedView = null;
-      anchorLayer = null;
+      queryLayer = null;
       app = null;
     },
 

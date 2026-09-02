@@ -10,35 +10,37 @@ components — the same templates the 2D portal uses.
 
 ## How it works
 
-A **persistent interaction is the trigger, a registered feature info view is the
-renderer.**
+**A feature provider is the trigger; a registered feature-info view is the renderer.**
+Both are VC Map extension points, so the plugin contains no interaction of its own.
 
-VC Map's built-in feature info flow is per feature and per layer: features on WMS layers
-only exist through a per-layer `WMSFeatureProvider` request, and the interaction only acts
-on a feature it actually picked. It therefore cannot express "query every visible layer at
-this position, including clicks into empty space". So this plugin brings its own trigger:
+`LuxAggregatedFeatureProvider` extends `AbstractFeatureProvider` — the framework's seam for
+"a layer which cannot provide features directly, but can provide features for a given
+location". VC Map's built-in `FeatureProviderInteraction` calls it whenever a click picked
+no feature, which is what makes clicks into empty space work, and skips providers entirely
+once something _was_ picked, so clicks on a 3D tileset reach their balloon by construction.
 
-- `LuxFeatureInfoInteraction` is added with `eventHandler.addPersistentInteraction()`, which
-  places it after `CoordinateAtPixel` / `FeatureAtPixel` / `FeatureProvider` and before the
-  exclusive `FeatureInfoInteraction`. It sees both the click position and any picked
-  feature, and hands the event on by simply not stopping propagation.
-- It only runs while VC Map's own **feature info toolbox toggle** is active, which means it
-  inherits the framework's tool semantics: when draw or measure claim the exclusive
-  interaction slot, the toggle switches off and lux queries stop with it.
-- Clicks that hit a feature already served by another view — a 3D tileset balloon, a search
-  result — are passed through untouched.
+The provider is attached to one plugin-owned, active, non-rendering vector layer. It runs
+the single aggregated query over every visible queryable lux layer and returns **exactly
+one** envelope feature — a point at the click carrying the whole response, tagged with
+`featureInfoViewSymbol`. That symbol beats any per-layer `properties.featureInfo`, so
+`LuxTemplateFeatureInfoView` renders it without any view resolution, and returning one
+feature is what keeps the 2D portal's stacked panel: two or more would make VC Map open its
+cluster list instead.
 
-The rendering half stays inside the framework: `LuxTemplateFeatureInfoView` is registered
-in `app.featureInfoClassRegistry`, and the interaction calls
-`featureInfo.selectFeature(feature, position, windowPosition, luxView)` with that view
-passed explicitly. That bypasses per-layer view resolution while keeping the built-in
-lifecycle — window position caching by class name, selection clearing, toolbox session
-semantics.
+Two details that are part of the contract rather than refinements:
 
-Because `selectFeature` insists on a feature that belongs to a layer, and an aggregated
-result belongs to a _position_, the plugin anchors each result on a throwaway point feature
-in a never-activated, non-pickable vector layer. Being inactive, that layer has no map
-implementation, so the highlight VC Map applies to the anchor renders nowhere.
+- **The provider gates itself on the feature info toolbox toggle.**
+  `FeatureProviderInteraction` sits in VC Map's immutable base interaction chain and nothing
+  in core or ui ever deactivates it, so providers are asked on _every_ click — while
+  panning, drawing, or with the tool switched off. Without the gate that would hit the
+  backend every time.
+- **The plugin clears the feature providers themesync leaves on lux layers.** With
+  `useLuxFeatureInfoTemplates` off, those are `text/html` `WMSFeatureProvider`s, which
+  fabricate a placeholder feature on every click _without issuing a request_ — that is how
+  the `featureInfo2d` iframe gets its position. Left in place, each placeholder joins this
+  plugin's envelope feature and VC Map opens its cluster list, and empty-space clicks stop
+  clearing the selection. Clearing them makes this plugin the sole provider and lets it work
+  with themesync's flag on or off.
 
 ## Requirements
 
@@ -73,7 +75,6 @@ reference it.
 | `templatesConfig`           | see `config.json`                          | The ~16 service URLs and `solarEconomicAllowedRoleIds` the templates need. Merged per key over the defaults. |
 | `credentials`               | `same-origin`                              | Credentials mode of the GetFeatureInfo request.                                                              |
 | `bigBuffer` / `smallBuffer` | `10` / `1`                                 | Buffer in metres (EPSG:2169) sent as `box1` / `box2`.                                                        |
-| `queryEmptySpace`           | `true`                                     | Whether a click that picked no feature still queries. `true` matches the 2D portal.                          |
 
 To route the 2D WMS layers through this plugin instead of the `featureInfo2d` iframe, set
 `useLuxFeatureInfoTemplates: true` on the themesync plugin. That also drops the per-layer
@@ -101,11 +102,13 @@ backend:
 
 - Highlighting the returned geometries (they arrive in EPSG:2169).
 - Elevation profiles — `profileComponent` is unset, so templates hide their `has_profile`
-  sections. The KML/GPX export handler is wired but unreachable until a Cesium-side profile
-  component exists, since the templates only emit `export` from that component.
-- `fid` permalink deep links. The query shape is implemented (`plugin.queryByFid()`); only
-  the URL handling is missing.
-- Routing 3D building clicks through the lux templates instead of the balloon.
+  sections. KML/GPX export goes with it: the templates only emit `export` from that
+  component, so a handler here would be unreachable.
+- `fid` permalink deep links. The request shape is implemented
+  (`buildFidParams()` in `luxQueryService.ts`); only the URL handling is missing. Note that
+  WMS GetFeatureInfo has no by-id equivalent, so this stays tied to the custom endpoint.
+- Routing 3D building clicks through the lux templates instead of the balloon. This is now
+  structural: `FeatureProviderInteraction` never runs once a feature was picked.
 - Shift-click accumulation from the 2D portal, deliberately dropped.
 
 ## Development

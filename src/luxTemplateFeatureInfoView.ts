@@ -1,6 +1,7 @@
 import { AbstractFeatureInfoView, WindowSlot } from '@vcmap/ui';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 import LuxFeatureInfoWindow from './LuxFeatureInfoWindow.vue';
+import { luxContentSymbol } from './luxAggregatedFeatureProvider.js';
 import { I18N_NAMESPACE } from './model.js';
 
 /*
@@ -22,20 +23,18 @@ type FeatureInfoComponent = ConstructorParameters<
  * Renders an aggregated lux GetFeatureInfo response with the shared geoportail
  * templates.
  *
- * Unlike the built-in views this one is not derived from a single feature — the
- * response covers every visible queryable layer at the clicked position. The
- * interaction stores it on the view right before calling
- * `featureInfo.selectFeature()` with this view as the explicit renderer, which
- * buys the whole built-in lifecycle (window position caching by class name,
- * selection clearing, toolbox session semantics) without the per-feature view
- * resolution that cannot express this query.
+ * Unlike the built-in views this one is not derived from a single feature's
+ * attributes — the response covers every visible queryable layer at the clicked
+ * position and arrives on the feature under {@link luxContentSymbol}, put there
+ * by `LuxAggregatedFeatureProvider`. Everything else is the framework's: the
+ * provider tags the feature with `featureInfoViewSymbol` so this view is
+ * selected without per-layer resolution, and `featureInfo.selectFeature()` then
+ * handles the window, the selection and the toolbox session.
  */
 class LuxTemplateFeatureInfoView extends AbstractFeatureInfoView {
   static get className(): string {
     return 'LuxTemplateFeatureInfoView';
   }
-
-  private _content: FeatureInfoJSON[] = [];
 
   constructor(options: object) {
     // The base class types the component against `FeatureInfoProps`, the
@@ -44,22 +43,19 @@ class LuxTemplateFeatureInfoView extends AbstractFeatureInfoView {
     super(options, LuxFeatureInfoWindow as FeatureInfoComponent);
   }
 
-  /** The response the next window opened from this view will render. */
-  get content(): FeatureInfoJSON[] {
-    return this._content;
-  }
-
-  set content(content: FeatureInfoJSON[]) {
-    this._content = content;
-  }
-
   getWindowComponentOptions(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the aggregated result is carried by the view, not by the clicked feature
-    ..._args: Parameters<GetWindowComponentOptions>
+    ...args: Parameters<GetWindowComponentOptions>
   ): WindowComponentOptions {
+    const [, featureInfo, layer] = args;
+    const content =
+      ((featureInfo.feature as unknown as Record<symbol, unknown>)[
+        luxContentSymbol
+      ] as FeatureInfoJSON[] | undefined) ?? [];
     const windowOptions = this.window as WindowOptions;
     return {
       state: {
+        // Explicit, so the header stays "Information" instead of defaulting to
+        // the (plugin-owned) layer's title.
         headerTitle: `${I18N_NAMESPACE}.title`,
         headerIcon: '$vcsInfo',
         ...windowOptions.state,
@@ -68,8 +64,11 @@ class LuxTemplateFeatureInfoView extends AbstractFeatureInfoView {
       component: LuxFeatureInfoWindow,
       position: windowOptions.position ?? { width: 400 },
       props: {
-        content: this._content,
+        content,
         currentUrl: window.location.href,
+        // VC Map closes a feature info window when its layer is deactivated or
+        // becomes unsupported, and matches on this prop.
+        layerName: layer.name,
       },
     };
   }

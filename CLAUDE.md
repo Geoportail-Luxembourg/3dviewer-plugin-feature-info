@@ -87,12 +87,13 @@ Reproduces the 2D geoportail's per-position GetFeatureInfo inside the VC Map 3D 
 one click → **one aggregated query over all visible queryable lux layers** → a window
 rendering the response with `@geoportallux/feature-info-templates`.
 
-**In one line: a custom persistent interaction is the trigger, a registered feature-info
-view class is the renderer.** VC Map's built-in feature-info flow is per-feature and
-per-layer (`WMSFeatureProvider` issues one request per layer, and only when a feature was
-picked), so it cannot express "query every visible layer at this position, including
-empty-space clicks". The `featureInfoClassRegistry` is still the right place for the
-rendering/lifecycle half, so the plugin uses both.
+**In one line: a feature provider is the trigger, a registered feature-info view class is
+the renderer.** Both are VC Map extension points; there is no custom interaction. An
+earlier version of this plugin (and of Plan B) used a custom persistent interaction on the
+premise that the built-in flow "cannot express empty-space clicks" — that premise was
+wrong. `FeatureProviderInteraction` runs precisely `if (!event.feature)` and asks every
+active layer's provider for features at the position. Do not reintroduce an interaction
+without re-reading that class first.
 
 The pieces, one module each:
 
@@ -103,23 +104,22 @@ The pieces, one module each:
   `WIDTH`/`HEIGHT`/`X`/`Y`/`BBOX` describe a synthetic north-up viewport centred on the
   point, with `zoom` from `map.getCurrentResolution()`. Eligible layers are active,
   non-transparent, carry `properties.luxId` and are flagged by `properties.luxQueryable` —
-  falling back to `allowPicking` on 2D layers for a themesync older than 1.6.
-- **`luxFeatureInfoInteraction.ts`** — `eventHandler.addPersistentInteraction()` (default
-  index, i.e. after the four built-ins and before the exclusive `FeatureInfoInteraction`),
-  gated on `toolboxManager.get('featureInfo').action.active`. Queries and stops propagation
-  on a hit; an empty result deliberately falls through so the built-in interaction clears
-  the selection. Also owns `createAnchorLayer()` — see below.
-  **Ownership rule:** a picked feature is foreign only when it is a Cesium3DTile feature,
-  carries `featureInfoViewSymbol`, or sits on a layer `isLuxQueryLayer()` rejects. A feature
-  on a lux queryable layer is ours _whatever_ `properties.featureInfo` names — with
-  `useLuxFeatureInfoTemplates` off, themesync leaves a `WMSFeatureProvider` on those layers,
-  so clicks arrive with a provided feature attached and deferring to `featureInfo2d` would
-  silently hand them to the 2D iframe. It only broke when exactly one layer matched: two or
-  more hits get wrapped in a synthetic cluster feature that belongs to no layer.
+  falling back to `allowPicking` on 2D layers for a themesync older than 1.6. Exports
+  `isLuxQueryLayer()`, also used for layer claiming.
+- **`luxAggregatedFeatureProvider.ts`** — `extends AbstractFeatureProvider`. Returns
+  **exactly one** envelope feature: a point at the click carrying the whole
+  `FeatureInfoJSON[]` under `luxContentSymbol`, tagged `featureInfoViewSymbol` so
+  `getFeatureInfoViewForFeature()` picks the lux view before any per-layer resolution.
+  One feature is what preserves the 2D stacked panel — two or more and VC Map opens its
+  cluster list instead. Two non-negotiables: it **gates on the `featureInfo` toolbox
+  toggle** (nothing in core or ui ever deactivates `FeatureProviderInteraction`, so
+  providers are asked on every click, tool or no tool), and it gives its feature an **empty
+  `Style`** (`selectFeature()` clones a provided feature onto the internal scratch layer
+  with `olcs_allowPicking: true`; without an empty style that clone would swallow the next
+  click at the same spot).
 - **`luxTemplateFeatureInfoView.ts`** — registered in `app.featureInfoClassRegistry` during
-  `initialize()`; the interaction sets `view.content` and calls
-  `featureInfo.selectFeature(anchor, position, windowPosition, view)`, so the built-in
-  window/selection/toolbox lifecycle comes for free.
+  `initialize()`; `getWindowComponentOptions()` reads the payload off the feature. The whole
+  built-in window/selection/toolbox lifecycle comes for free.
 - **`LuxFeatureInfoWindow.vue`** — a plain wrapper that `provide()`s `LUX_TPL_CONTEXT` and
   `LUX_TPL_I18N` in `setup()` (reaching the plugin via `inject('vcsApp')` +
   `plugins.getByKey`, because a config-defined view cannot hand them down), sets
@@ -129,13 +129,19 @@ The pieces, one module each:
 - **`luxTplRuntime.ts`** — a dedicated i18next instance (not the singleton) with
   `i18next-http-backend`, the `LuxTplContext`, and a `localeChanged` listener.
 
-### The anchor layer
+### Claiming the lux layers
 
-`featureInfo.selectFeature()` insists on a feature belonging to a layer of this app, but an
-aggregated result belongs to a _position_. Each result is therefore anchored on a throwaway
-point feature in a never-activated, non-pickable `VectorLayer`. Being inactive, that layer
-has no map implementation, so the highlight VC Map applies to the anchor renders nowhere.
-Activating it is the natural starting point for phase 7 highlighting.
+`index.ts` clears `layer.featureProvider` on every layer `isLuxQueryLayer()` accepts, on
+`layers.added` and again on each `stateChanged` (a `WMSLayer` only builds its provider in
+`initialize()`, i.e. on first activation).
+
+Why: with themesync's `useLuxFeatureInfoTemplates` off, its WMS layers carry a `text/html`
+`WMSFeatureProvider`, which fabricates a placeholder feature on every click **without
+issuing any request** — that is how `IframeWmsFeatureInfoView` gets its position. Left
+alone, each placeholder joins this plugin's envelope feature, VC Map builds a cluster
+feature and opens its list window instead of the stacked panel, and empty-space clicks stop
+clearing the selection. Clearing them also means this design works whether that flag is on
+or off, which is what keeps `preview --vcm` against staging usable.
 
 ### The templates package contract
 
@@ -206,9 +212,12 @@ Checked against the live backend and a real browser session driven over CDP agai
   not needed. From `localhost` they answer `*` + credentials instead, which browsers
   reject — see "Running it".
 - **The request contract holds.** The captured response is in `tests/fixtures/`.
-- **End to end works against an unmodified deployment**: one click, one aggregated request
-  over every active queryable layer, templates rendered in a VC Map window, no console
-  errors — with themesync 1.5.2 and no config change, via the `allowPicking` fallback.
+- **End to end works against an unmodified deployment** — themesync 1.5.2, no config
+  change, via the `allowPicking` fallback. Driven over CDP, all five behaviours checked:
+  one active queryable layer and four both render the stacked panel from **one** request
+  (`302` / `147,698,262,302`) with no cluster window and no `featureInfo2d` iframe; a click
+  where no layer has data closes the panel; with the tool toggled off a click issues **zero**
+  requests; attribute values render, not just labels.
 
 Still unvalidated:
 

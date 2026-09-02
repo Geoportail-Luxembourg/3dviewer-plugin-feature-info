@@ -3,7 +3,8 @@
 Initial release.
 
 - Aggregated per-position GetFeatureInfo over all visible queryable lux layers, triggered by
-  a persistent interaction gated on VC Map's feature info toolbox toggle.
+  a custom `AbstractFeatureProvider` on a plugin-owned layer, gated on VC Map's feature info
+  toolbox toggle.
 - `LuxTemplateFeatureInfoView`, registered in `app.featureInfoClassRegistry`, renders the
   response with `@geoportallux/feature-info-templates`.
 - i18next instance for the templates, fed from the geoportail's deployed locale artifacts

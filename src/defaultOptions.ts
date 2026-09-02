@@ -16,7 +16,6 @@ export default function getDefaultOptions(): PluginConfig {
     luxLocalesUrl: `${GEOPORTAIL}/assets/locales`,
     bigBuffer: 10,
     smallBuffer: 1,
-    queryEmptySpace: true,
     templatesConfig: {
       casipoUrl: `${GEOPORTAIL}/casipo`,
       forageVirtuelUrl: `${GEOPORTAIL}/getRapportForageVirtuel`,

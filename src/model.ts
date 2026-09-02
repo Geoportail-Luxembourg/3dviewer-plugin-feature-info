@@ -44,12 +44,6 @@ export type PluginConfig = {
   bigBuffer: number;
   /** Buffer in meters sent as `box2`. The geoportail uses 1. */
   smallBuffer: number;
-  /**
-   * Whether a click that picked no feature still triggers an aggregated query.
-   * True reproduces the 2D geoportail; false restricts queries to clicks that
-   * hit something.
-   */
-  queryEmptySpace: boolean;
 };
 
 export type PluginState = Record<never, never>;
