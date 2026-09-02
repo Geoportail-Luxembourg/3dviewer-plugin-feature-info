@@ -1,6 +1,5 @@
 <script setup lang="ts">
-  import { getCurrentInstance, inject, provide } from 'vue';
-  import { buildVueDompurifyHTMLDirective } from 'vue-dompurify-html';
+  import { inject, provide } from 'vue';
   import type { VcsUiApp } from '@vcmap/ui';
   import {
     getTemplateComponent,
@@ -11,8 +10,6 @@
   import '@geoportallux/feature-info-templates/style.css';
   import { name } from '../package.json';
   import type { LuxFeatureInfoPlugin } from './index.js';
-
-  const DOMPURIFY_DIRECTIVE = 'dompurify-html';
 
   defineProps<{
     /** One entry per layer that returned features, in 2D response order. */
@@ -38,22 +35,6 @@
   if (runtime) {
     provideLuxTplContext(runtime.context);
     provide(LUX_TPL_I18N, runtime.i18n);
-  }
-
-  /*
-   * Six templates — `default` among them — render attribute values through
-   * `v-dompurify-html`. That directive is not part of the templates package;
-   * the geoportail registers it app-wide in its `main.ts`, so the package has an
-   * undeclared host requirement. Until it owns the directive itself, the host
-   * has to supply it, or those values render empty.
-   *
-   * Registered on the shared VC Map Vue app because a directive used inside
-   * child components cannot be registered locally on this wrapper. Guarded so a
-   * second window does not trigger Vue's duplicate-registration warning.
-   */
-  const vueApp = getCurrentInstance()?.appContext.app;
-  if (vueApp && !vueApp.directive(DOMPURIFY_DIRECTIVE)) {
-    vueApp.directive(DOMPURIFY_DIRECTIVE, buildVueDompurifyHTMLDirective());
   }
 </script>
 

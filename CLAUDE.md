@@ -79,10 +79,10 @@ Two traps in the plugin itself, both invisible to lint/type-check/tests:
   so the import 404s and the whole plugin fails to load in dev (it works in the build,
   which inlines it). Defaults belong in `src/defaultOptions.ts`; a deployed VC Map reads a
   plugin's config from the app config only, never from its shipped `config.json`.
-- **The templates need a `v-dompurify-html` directive** that the package neither ships nor
-  declares — the geoportail registers it app-wide in `main.ts`. `LuxFeatureInfoWindow.vue`
-  registers it on the shared Vue app. Without it, six templates (`default` included) render
-  attribute labels but empty values.
+- **HTML sanitizing is the package's job now.** The templates used to need a
+  `v-dompurify-html` directive the package neither shipped nor declared, so this plugin had
+  to register one on the shared Vue app. As of the package's work-item-10 change it owns
+  `v-lux-html` internally and needs nothing from the host — do not re-add a global.
 
 ## What this plugin does
 
@@ -187,6 +187,9 @@ profileComponent?, isThemeAvailable? }`
   plugin. Locales come from the deployed geoportail's `assets/locales/{ns}.{lng}.json`
 - `getTemplateComponent()` + every template component, and the `FeatureInfoJSON` models
 
+Sanitizing is **not** part of that surface: the package owns `v-lux-html` internally, so
+the host registers no directives.
+
 Wire `user` from the auth plugin's reactive `userState` (optional dependency, anonymous
 fallback) and `notify` to `app.notifier.add`.
 
@@ -246,7 +249,7 @@ change). Each of these broke at some point during implementation:
   the clamp the tolerance is centimetres;
 - a second click inside an already-selected geometry still queries — this needs the empty
   style on provided features;
-- attribute values render, not just labels (the `v-dompurify-html` directive).
+- attribute values render, not just labels (sanitized by the package's own directive).
 
 Coverage, measured against the live service: of 732 queryable lux layers, 250 had data at
 one test point per the aggregated endpoint; via WMS JSON at 2 m/px 215 returned features, 30

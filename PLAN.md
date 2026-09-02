@@ -226,7 +226,7 @@ Consequences of the decisions above, all deliberate:
    - a **point** layer (152 addresses) is still clickable when zoomed in close — this is
      the `minResolution` clamp; without it the tolerance collapses to centimetres;
    - `parcels` renders `PF` and the measurements table, i.e. nested attributes survive;
-   - attribute values render, not just labels (the `v-dompurify-html` directive);
+   - attribute values render, not just labels (sanitized by the package itself);
    - a click into empty space closes the panel.
 5. Re-run with themesync's `useLuxFeatureInfoTemplates` on, to confirm the plugin does not
    depend on it either way.
