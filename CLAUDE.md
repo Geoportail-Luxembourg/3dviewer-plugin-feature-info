@@ -28,8 +28,14 @@ Not implemented, and deliberately so:
   longer depends on themesync's `useLuxFeatureInfoTemplates` flag — it claims the lux layers
   itself — so the flag is now a tidiness win, not a prerequisite.
 
-Reference: `/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`
-("Plan B") and its companion `docs/plan-feature-info-templates.md` ("Plan A").
+`PLAN.md` in this repo is the working record of the feature-provider refactor: the designs
+that were weighed, why the standard per-layer WMS route was rejected, and where the
+implementation deviated from what was planned. Read it before changing the trigger.
+
+Canonical plans live in the sibling checkout:
+`/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`
+("Plan B") and its companion `docs/plan-feature-info-templates.md` ("Plan A"). `PLAN.md`
+overlaps with Plan B — change Plan B first, then re-align.
 
 ## Commands
 
