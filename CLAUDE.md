@@ -4,21 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 1-6 of the plan are implemented. `@geoportallux/feature-info-templates` is consumed
-through a `file:` dependency on the sibling `luxembourg-geoportail` checkout, because that
-package is not published yet (Plan A phase 6). `.npmrc` sets `install-links=true` so npm
-copies rather than symlinks it — a symlink whose realpath is outside the project root trips
-Vite's dev server `fs.allow`.
+Phases 1-6 of the plan are implemented, phase 5 on its second design — a feature provider
+replaced the original custom interaction; see "What this plugin does".
+`@geoportallux/feature-info-templates` is consumed through a `file:` dependency on the
+sibling `luxembourg-geoportail` checkout, because that package is not published yet (Plan A
+phase 6). `.npmrc` sets `install-links=true` so npm copies rather than symlinks it — a
+symlink whose realpath is outside the project root trips Vite's dev server `fs.allow`.
 
 Not implemented, and deliberately so:
 
 - **Phase 7 enhancements** — highlighting the returned geometries, routing 3D building
-  clicks through the lux templates, `fid` deep links, 3D elevation profile.
+  clicks through the lux templates, `fid` deep links, 3D elevation profile. Two of those
+  changed character with the provider design: highlighting is now nearly free (put the real
+  geometries on the envelope feature, but keep it to _one_ feature or the result becomes a
+  cluster list), and 3D building clicks are now structurally out of reach, because
+  `FeatureProviderInteraction` never runs once a feature was picked.
+- **KML/GPX export.** Was implemented, then deleted as dead code: the templates only emit
+  `export` from `profileComponent`, which is unset. It returns with the 3D profile.
 - **The 3dviewer deployment entry** (plan phase 6.3). `config/lux.config.json` in the
   `3dviewer` repo is untouched: its `plugins` array installs from npm, and pointing it at an
-  unpublished plugin while flipping themesync's `useLuxFeatureInfoTemplates` on would leave
-  the WMS layers referencing a feature info view that does not exist, breaking 2D feature
-  info. The exact config block to add is in this repo's README.
+  unpublished plugin would leave the WMS layers referencing a feature info view that does
+  not exist. The exact config block to add is in this repo's README. Note the plugin no
+  longer depends on themesync's `useLuxFeatureInfoTemplates` flag — it claims the lux layers
+  itself — so the flag is now a tidiness win, not a prerequisite.
 
 Reference: `/home/tkohr/Projets/luxembourg/git/luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`
 ("Plan B") and its companion `docs/plan-feature-info-templates.md` ("Plan A").
