@@ -1,0 +1,450 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              77241.332,
+              75035.219000001
+            ],
+            [
+              77238.199,
+              75035.07
+            ],
+            [
+              77232.504,
+              75034.791999999
+            ],
+            [
+              77232.612,
+              75031.648
+            ],
+            [
+              77232.794,
+              75028.015000001
+            ],
+            [
+              77232.934,
+              75024.891000001
+            ],
+            [
+              77233.14,
+              75021.024
+            ],
+            [
+              77233.288,
+              75017.721999999
+            ],
+            [
+              77233.363,
+              75016.868000001
+            ],
+            [
+              77238.622,
+              75017.081
+            ],
+            [
+              77242.1175,
+              75017.2338
+            ],
+            [
+              77242.031,
+              75019.147
+            ],
+            [
+              77241.9144,
+              75021.655300001
+            ],
+            [
+              77241.823,
+              75023.619999999
+            ],
+            [
+              77241.7499,
+              75025.551999999
+            ],
+            [
+              77241.649,
+              75028.216
+            ],
+            [
+              77241.458,
+              75032.237
+            ],
+            [
+              77241.332,
+              75035.219000001
+            ]
+          ]
+        ]
+      },
+      "fid": "359_075F00498000399",
+      "id": "075F00498000399",
+      "alias": {},
+      "properties": {
+        "code_commu": "075",
+        "code_sup": "000399",
+        "code_secti": "F",
+        "textstring": "075F00498000399",
+        "num_cadast": "00498",
+        "type": 510,
+        "name": "PLACE",
+        "id": "075F00498000399",
+        "gid": 440469,
+        "label": "Luxembourg, Ville Haute(F), 498 / 399",
+        "PF": {
+          "commune_cad": 75,
+          "communeCad": 75,
+          "section_letter": "F",
+          "sectionLetter": "F",
+          "main_number": 498,
+          "mainNumber": 498,
+          "additional_number": 399,
+          "additionalNumber": 399,
+          "full_id": "075F00498000399",
+          "fullId": "075F00498000399",
+          "capacity": "0ha 01a 56ca",
+          "locality": "Rue Notre-Dame",
+          "town_name": "LUXEMBOURG",
+          "townName": "LUXEMBOURG",
+          "section_name": "LF de la VILLE HAUTE",
+          "sectionDesignation": "LF de la VILLE HAUTE",
+          "measurement_number": 0,
+          "measurementNumber": 0,
+          "mutation_year": 1869,
+          "mutationYear": 1869,
+          "occupations": [
+            "bâtiment à habitation"
+          ],
+          "farming_types": [
+            "place (occupée)"
+          ],
+          "farmingTypes": [
+            "place (occupée)"
+          ],
+          "is_historic": false,
+          "isHistoric": false
+        },
+        "measurements": []
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              77265.016,
+              75036.371999999
+            ],
+            [
+              77263.369,
+              75036.301999999
+            ],
+            [
+              77257.441,
+              75035.978
+            ],
+            [
+              77250.321000001,
+              75035.640000001
+            ],
+            [
+              77250.449,
+              75033.859999999
+            ],
+            [
+              77250.634,
+              75031.219000001
+            ],
+            [
+              77250.793,
+              75028.536
+            ],
+            [
+              77250.954,
+              75026.664000001
+            ],
+            [
+              77250.995,
+              75025.809
+            ],
+            [
+              77251.119,
+              75023.847999999
+            ],
+            [
+              77251.222,
+              75022.16
+            ],
+            [
+              77251.398,
+              75019.835000001
+            ],
+            [
+              77251.4822,
+              75018.464
+            ],
+            [
+              77253.524,
+              75018.379799999
+            ],
+            [
+              77256.305,
+              75018.265000001
+            ],
+            [
+              77261.077,
+              75018.029999999
+            ],
+            [
+              77265.6442,
+              75017.823000001
+            ],
+            [
+              77265.691,
+              75018.836999999
+            ],
+            [
+              77265.994,
+              75024.453
+            ],
+            [
+              77266.231,
+              75028.923
+            ],
+            [
+              77266.468,
+              75033.682
+            ],
+            [
+              77266.564,
+              75034.647
+            ],
+            [
+              77266.468,
+              75035.309
+            ],
+            [
+              77266.171,
+              75035.779999999
+            ],
+            [
+              77265.942,
+              75035.962999999
+            ],
+            [
+              77265.572,
+              75036.224
+            ],
+            [
+              77265.016,
+              75036.371999999
+            ]
+          ]
+        ]
+      },
+      "fid": "359_075F00498000401",
+      "id": "075F00498000401",
+      "alias": {},
+      "properties": {
+        "code_commu": "075",
+        "code_sup": "000401",
+        "code_secti": "F",
+        "textstring": "075F00498000401",
+        "num_cadast": "00498",
+        "type": 510,
+        "name": "PLACE",
+        "id": "075F00498000401",
+        "gid": 441457,
+        "label": "Luxembourg, Ville Haute(F), 498 / 401",
+        "PF": {
+          "commune_cad": 75,
+          "communeCad": 75,
+          "section_letter": "F",
+          "sectionLetter": "F",
+          "main_number": 498,
+          "mainNumber": 498,
+          "additional_number": 401,
+          "additionalNumber": 401,
+          "full_id": "075F00498000401",
+          "fullId": "075F00498000401",
+          "capacity": "0ha 02a 71ca",
+          "locality": "Rue Notre-Dame",
+          "town_name": "LUXEMBOURG",
+          "townName": "LUXEMBOURG",
+          "section_name": "LF de la VILLE HAUTE",
+          "sectionDesignation": "LF de la VILLE HAUTE",
+          "measurement_number": 0,
+          "measurementNumber": 0,
+          "mutation_year": 1869,
+          "mutationYear": 1869,
+          "occupations": [
+            "bâtiment à habitation"
+          ],
+          "farming_types": [
+            "place (occupée)"
+          ],
+          "farmingTypes": [
+            "place (occupée)"
+          ],
+          "is_historic": false,
+          "isHistoric": false
+        },
+        "measurements": []
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              77250.321000001,
+              75035.640000001
+            ],
+            [
+              77244.845,
+              75035.386
+            ],
+            [
+              77241.332,
+              75035.219000001
+            ],
+            [
+              77241.458,
+              75032.237
+            ],
+            [
+              77241.649,
+              75028.216
+            ],
+            [
+              77241.7499,
+              75025.551999999
+            ],
+            [
+              77241.823,
+              75023.619999999
+            ],
+            [
+              77241.9144,
+              75021.655300001
+            ],
+            [
+              77242.031,
+              75019.147
+            ],
+            [
+              77242.1175,
+              75017.2338
+            ],
+            [
+              77244.981,
+              75017.358999999
+            ],
+            [
+              77251.531,
+              75017.669
+            ],
+            [
+              77251.4822,
+              75018.464
+            ],
+            [
+              77251.398,
+              75019.835000001
+            ],
+            [
+              77251.222,
+              75022.16
+            ],
+            [
+              77251.119,
+              75023.847999999
+            ],
+            [
+              77250.995,
+              75025.809
+            ],
+            [
+              77250.954,
+              75026.664000001
+            ],
+            [
+              77250.793,
+              75028.536
+            ],
+            [
+              77250.634,
+              75031.219000001
+            ],
+            [
+              77250.449,
+              75033.859999999
+            ],
+            [
+              77250.321000001,
+              75035.640000001
+            ]
+          ]
+        ]
+      },
+      "fid": "359_075F00498000400",
+      "id": "075F00498000400",
+      "alias": {},
+      "properties": {
+        "code_commu": "075",
+        "code_sup": "000400",
+        "code_secti": "F",
+        "textstring": "075F00498000400",
+        "num_cadast": "00498",
+        "type": 510,
+        "name": "PLACE",
+        "id": "075F00498000400",
+        "gid": 449155,
+        "label": "Luxembourg, Ville Haute(F), 498 / 400",
+        "PF": {
+          "commune_cad": 75,
+          "communeCad": 75,
+          "section_letter": "F",
+          "sectionLetter": "F",
+          "main_number": 498,
+          "mainNumber": 498,
+          "additional_number": 400,
+          "additionalNumber": 400,
+          "full_id": "075F00498000400",
+          "fullId": "075F00498000400",
+          "capacity": "0ha 01a 66ca",
+          "locality": "Rue Notre-Dame",
+          "town_name": "LUXEMBOURG",
+          "townName": "LUXEMBOURG",
+          "section_name": "LF de la VILLE HAUTE",
+          "sectionDesignation": "LF de la VILLE HAUTE",
+          "measurement_number": 0,
+          "measurementNumber": 0,
+          "mutation_year": 1869,
+          "mutationYear": 1869,
+          "occupations": [
+            "bâtiment à habitation"
+          ],
+          "farming_types": [
+            "place (occupée)"
+          ],
+          "farmingTypes": [
+            "place (occupée)"
+          ],
+          "is_historic": false,
+          "isHistoric": false
+        },
+        "measurements": []
+      }
+    }
+  ]
+}

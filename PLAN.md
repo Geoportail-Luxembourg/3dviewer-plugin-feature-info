@@ -1,136 +1,241 @@
-# Plan B, revised — minimising custom code in this plugin
+# The feature info trigger — three designs, and why this one
 
-**Status: done**, in `490737f refactor: trigger via a feature provider instead of a custom
-interaction`. This is the working record of that refactor — what was built, what deviated
-from the plan that was approved, and what is left. It is kept here so the reasoning travels
-with the code; the canonical plan is
-`luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md` and the two overlap, so
-prefer changing that one and re-aligning this.
+**Status: implemented.** This is the working record of how the plugin arrived at standard
+per-layer WMS GetFeatureInfo, kept here so the reasoning travels with the code. The
+canonical plan is `luxembourg-geoportail/docs/plan-3dviewer-featureinfo-plugin.md`; prefer
+changing that and re-aligning this.
+
+Two designs preceded it, both replaced:
+
+1. **A custom persistent interaction** doing one aggregated call to the geoportail's
+   `/getfeatureinfo`. Justified by a claim that turned out false — that VC Map's built-in
+   flow "cannot express query all visible layers at a position, including empty-space
+   clicks". `FeatureProviderInteraction` does exactly that.
+2. **One aggregating `AbstractFeatureProvider`** on a plugin-owned layer, still calling the
+   custom endpoint, returning a single envelope feature to keep the 2D stacked panel.
+
+The move to candidate C traded the stacked panel for VC Map's cluster list and the
+aggregated call for N standard ones, in exchange for the plugin no longer speaking the
+custom endpoint's protocol at all.
 
 ## Context
 
-The plugin reproduces the geoportail's per-position GetFeatureInfo in the VC Map 3D viewer,
-rendering with `@geoportallux/feature-info-templates`. It worked, but the original Plan B
-justified a **custom persistent interaction** on a claim that turned out to be false: that
-VC Map's built-in flow "cannot express query all visible layers at a position, including
-empty-space clicks". It can — `FeatureProviderInteraction` runs precisely
-`if (!event.feature)` and calls `getFeaturesByCoordinate(position, resolution, layer)` on
-every active layer with a provider. The plan never mentioned `AbstractFeatureProvider` or
-`featureProviderClassRegistry`, so it never weighed the framework's designated seam.
+The plugin currently makes one aggregated call to the geoportail's custom
+`/getfeatureinfo` and renders every hit layer in one stacked panel. Candidate C replaces
+that with **VC Map's own `WMSFeatureProvider` on each lux layer**, using
+`responseType: 'application/json'`, so the plugin contains no query code at all. It was
+rejected earlier over the two problems below; both are now accepted or solved:
 
-Goal: as little custom code in the plugin as possible, without losing behaviour.
+- **Which template renders a layer** is server-side only (`lux_getfeature_definition.template`,
+  keyed by numeric layer id, absent from the themes API). → A `templates` map in the plugin
+  config, `default.html` for anything unmapped.
+- **Several layers hitting at once** yields VC Map's cluster list rather than the stacked
+  panel. → Accepted.
 
-### Candidate C, explored and rejected
+Measured facts this rests on (all against the live service):
 
-Dropping the custom aggregated endpoint for a standard `WMSFeatureProvider` with
-`responseType: 'application/json'` per layer. Measured findings, kept because they are
-expensive to re-derive:
-
-- `wms.geoportail.lu/public_map_layers/service` advertises `application/json` and returns a
-  **lux-enriched** payload — `fid` in composite form with the backend's layer remap applied
-  (262 → `359_075F…`), `id`, populated `alias`, and `properties` identical to the aggregated
+- The geoportail's WMS answers `INFO_FORMAT=application/json` with a **lux-enriched**
+  payload, not a stock one: each feature carries `fid` in the composite
+  `<layerId>_<featureId>` form (with the backend's layer remap applied — 262 →
+  `359_075F00503002288`), `id`, `alias`, and `properties` byte-identical to the aggregated
   endpoint's `attributes`, nested `PF` and `measurements[]` included. Geometry is EPSG:2169
-  regardless of `SRS`. 709 of 732 queryable lux layers are WMS-queryable.
-- **The blocker is the envelope, not the attributes.** `template` — which of 41 components
-  renders a layer — lives only in the backend table `lux_getfeature_definition` and is
-  absent from the themes API. Missing, it silently degrades every layer to `default.html`.
-- Hit tolerance diverges: layer 152 returned 1 feature from the aggregated endpoint and 0
-  from WMS at the same point. The aggregated path uses ±10 m `box1` filtered by ±1 m `box2`;
-  WMS queries one pixel at the map's current resolution, sub-metre in a 3D camera view.
-- The backend's own `_ogc_getfeatureinfo()` _is_ candidate C, for the layers whose
-  `engine` selects it — with `template` still coming from the table. C becomes viable if
-  `template` is ever published as themes metadata (a data change: the themes API serialises
-  `Metadata` rows generically).
+  regardless of `SRS`. 709 of 732 queryable lux layers are advertised queryable.
+- **Hit tolerance is ≈3 px × resolution.** For a real address point: at 0.5 m/px only an
+  exact hit registers; at 1 m/px within 2 m; at 2 m/px within 5 m; at 5 m/px within 15 m.
+  In a 3D camera view `getCurrentResolution()` goes sub-metre, which would make point
+  layers unclickable — so the resolution passed to the provider must be clamped.
+  `TileWMS.getFeatureInfoUrl()` turns resolution into a tile-grid level and sends that
+  tile's extent as `BBOX` with `WIDTH`/`HEIGHT` = tile size, so a coarser resolution means
+  bigger pixels and a wider tolerance. That is the only lever available.
+- **Coverage, measured.** Of 732 queryable lux layers, 250 had data at one test point per
+  the aggregated endpoint. Via WMS `application/json` at 2 m/px: **215 (86%) returned
+  features, 30 returned empty, 5 returned HTTP 500**. Re-probing the 30 at coarser
+  resolutions recovered **all 17 distinct ones**, so they were tolerance artifacts, not
+  capability gaps — which makes the clamp below the single most important knob in this
+  change. The genuine gap is **5 of 250 (2%)**: 1969/1970/2054 (`automatic_sols.html`,
+  12 features each), 1531, and 504 — whose `template` is a URL
+  (`getpoitemplate?layer=504`), i.e. `remote_template: true`, which the templates package
+  does not support at any transport. Decision: **accept the loss** —
+  `WMSFeatureProvider` swallows the error and those layers show nothing.
 
-### Decisions taken
+## Approach
 
-1. Keep the custom grouped `/getfeatureinfo` request.
-2. Keep the 2D stacked panel, not VC Map's cluster list.
+Everything lives in the plugin. **No themesync change, no backend change**, so
+`vcmplugin preview --vcm https://3d-staging.geoportail.lu/` keeps working unchanged.
 
-So the query stayed custom and only the trigger changed.
+The plugin already walks the lux layers to clear their feature providers
+(`claimLayer()` in `src/index.ts`). That becomes _replacing_ them.
 
-## What was built
+### `src/luxWmsFeatureProvider.ts` (new)
 
-`LuxAggregatedFeatureProvider extends AbstractFeatureProvider` on one plugin-owned, active,
-non-rendering `VectorLayer`. `getFeaturesByCoordinate()` gates on the toolbox toggle, runs
-the existing aggregated query, and returns **exactly one** envelope feature — a point at the
-click carrying the whole `FeatureInfoJSON[]` under `luxContentSymbol`, tagged
-`featureInfoViewSymbol` so `getFeatureInfoViewForFeature()` selects the lux view with no
-per-layer resolution. One feature is what preserves the stacked panel; two or more become a
-cluster.
+`extends WMSFeatureProvider`, constructed from the layer's public fields — the same nine
+`WMSLayer._setFeatureProvider()` reads (`url`, `parameters`, `tilingSchema`, `version`,
+`tileSize`, `minLevel`, `maxLevel`, `extent`, `headers`) — plus
+`responseType: 'application/json'`, `projection` = EPSG:2169 with the full proj4 string
+from `src/luxProjection.ts`, and `FEATURE_COUNT` added to `parameters` (never set
+automatically; servers default to one feature).
 
-**Files** — added `src/luxAggregatedFeatureProvider.ts`; rewrote
-`src/luxTemplateFeatureInfoView.ts` (reads the payload off the feature, keeps `layerName` in
-props, explicit `headerTitle`) and `src/index.ts` (provider layer, layer claiming, no
-interaction); deleted `src/luxFeatureInfoInteraction.ts` and `src/luxFeatureExport.ts`;
-trimmed `src/model.ts`, `src/defaultOptions.ts`, `src/LuxFeatureInfoWindow.vue`.
-`src/luxQueryService.ts` and all three test files are untouched.
+Two overrides:
 
-**Three things that are contract, not polish**
+- `getFeaturesByCoordinate(coordinate, resolution, layer)` — return `[]` unless the
+  `featureInfo` toolbox toggle is active and `layer.opacity > 0`, then delegate to `super`
+  with `Math.max(resolution, minResolution)`. The gate is not optional:
+  `FeatureProviderInteraction` sits in VC Map's immutable base chain and nothing in core or
+  ui ever deactivates it, so providers are asked on every click — panning, drawing, tool
+  off — and each one is now a real HTTP request.
+- `featureResponseCallback(data, coordinate)` — `ol`'s GeoJSON reader keeps only
+  `id`/`geometry`/`properties`, dropping `fid` and `alias`, and reprojects the geometry to
+  mercator. So parse `data` once, let `super` build the features, then pair them up and
+  stash the **raw** JSON feature on each under a symbol. That keeps `fid` exact (rebuilding
+  it as `${luxId}_${id}` would be wrong for remapped layers), keeps the 2169 geometry the
+  templates expect, and keeps `properties` free of the `olcs_*` keys
+  `getProviderFeature()` adds. Also `setId(fid)` for a globally unique feature id
+  (`id` alone is only unique per layer, and it keys the scratch layer and the cluster rows),
+  and tag `featureInfoViewSymbol` so the lux view is selected without depending on
+  `properties.featureInfo`.
 
-1. The provider gates itself on `toolboxManager.get('featureInfo').action.active`.
-   `FeatureProviderInteraction` is in the immutable base chain and nothing in core or ui
-   ever calls `featureProviderInteraction.setActive(…)`, so providers are asked on every
-   click, tool or no tool.
-2. The plugin clears `layer.featureProvider` on every layer `isLuxQueryLayer()` accepts —
-   on `layers.added` and on each `stateChanged`, because a `WMSLayer` only builds its
-   provider in `initialize()`. themesync's `text/html` providers fabricate a placeholder
-   feature per click _without any request_; left alone they turn every result into a cluster
-   and stop empty-space clicks from clearing the panel.
-3. The envelope feature carries an empty `Style`. `selectFeature()` clones a provided
-   feature onto its scratch layer with `olcs_allowPicking: true`; otherwise that clone would
-   swallow the next click at the same spot.
+Then build the single-entry `FeatureInfoJSON` and stash it under the existing
+`luxContentSymbol`, so `LuxTemplateFeatureInfoView` needs almost no change.
 
-## Deviations from the approved plan
+### `src/luxFeatureInfoJson.ts` (new, ~40 lines)
 
-- **The provider is not registered in `featureProviderClassRegistry`.** It needs the app,
-  the plugin config and the view instance at construction, none of which can come from
-  JSON, so a registry entry would advertise a type no config could instantiate.
-- **Layer claiming needed a `stateChanged` listener**, not the one-off sweep the plan
-  implied — the provider does not exist until a layer is first activated.
-- **`queryEmptySpace` was removed** (plan said `model.ts` unchanged). The provider only ever
-  runs on clicks that picked nothing, so the option could not mean anything.
-- **The saving is −83 lines, not the estimated −230.** The provider came out at 143 lines
-  rather than ~70 and `index.ts` grew by 98 for the gate and the claiming. What improved is
-  which code is left: the interaction and the ownership rule — the two most intricate
-  pieces, and the source of the single-layer iframe bug — are gone.
-- **Claiming removed the flag dependency.** The plan accepted that design B needs
-  themesync's `useLuxFeatureInfoTemplates` on; it does not, so `preview --vcm` against an
-  unmodified staging deployment still works.
+`toFeatureInfoJson(rawJsonFeature, layer, config)`:
 
-## Verified
+| field         | value                                                                     |
+| ------------- | ------------------------------------------------------------------------- |
+| `template`    | `config.templates[String(luxId)] ?? 'default.html'`                       |
+| `layer`       | `String(layer.properties.luxId)`                                          |
+| `layerLabel`  | `layer.name` — the templates translate it via the `layers` namespace      |
+| `ordered`     | `config.ordered` (default `true`, i.e. keep the server's attribute order) |
+| `has_profile` | `false` — no `profileComponent` in 3D                                     |
+| `features`    | `[{ type, geometry, fid, id, alias, attributes: raw.properties }]`        |
 
-Driven over CDP against `https://3d-staging.geoportail.lu`, themesync 1.5.2, no config
-change. `npm run lint`, `type-check`, 32 tests and `build` all green.
+Plus the parcel annotation (`layer_name`/`isParcel`) lifted out of
+`postProcessResponse()`, reusing `isParcelLayerIdent()`.
 
-| check                         | result                                                          |
-| ----------------------------- | --------------------------------------------------------------- |
-| one active queryable layer    | one request (`302`), stacked panel, no `featureInfo2d` iframe   |
-| four active queryable layers  | **one** request (`147,698,262,302`), **one** window, no cluster |
-| click where no layer has data | panel closes                                                    |
-| feature info tool off         | **zero** requests                                               |
-| attribute values              | render, not just labels                                         |
+### `src/index.ts`
 
-## Known gaps
+`claimLayer()` replaces rather than clears, idempotently (skip if the provider already is a
+`LuxWmsFeatureProvider`). It must run **after** `WMSLayer.initialize()`, which builds the
+config provider and would overwrite an earlier assignment — so hook
+`app.layers.stateChanged` (fires around activation) plus a sweep in `onVcsAppMounted`.
+Also set `layer.properties.clusterFeatureTitleProperty = 'label'`: cluster rows fall back
+`attributes[titleProp] || attributes.title || attributes.name || feature.getId()`, and lux
+features carry `label`, so without this most rows show a raw id.
 
-- A `WMSLayer` rebuilds its provider in `reload()`/`setLayers()` without firing
-  `stateChanged`, so a themesync reload can resurrect one. Not handled; it disappears once
-  `useLuxFeatureInfoTemplates` is on.
-- The templates' "direct link to this object" is built from `currentUrl` =
-  the 3D viewer's `window.location.href`, which has no query string and no `fid` handling,
-  so the link is broken. A configured 2D-portal base URL would fix it.
-- The templates need a `v-dompurify-html` directive the package neither ships nor declares;
-  the plugin registers it on the shared Vue app as a stopgap. Tracked as work item 10 in
-  `docs/plan-feature-info-templates.md`.
-- Phase 7 remains open: highlighting (now nearly free — put the real geometries on the
-  envelope feature, but keep it to one feature), 3D building clicks (now structurally out of
-  reach of the provider), `fid` deep links, elevation profile.
+Delete the plugin-owned `VectorLayer` and `LuxAggregatedFeatureProvider`.
 
-## Uncommitted elsewhere
+### Template map
 
-- `3dviewer-themesync`: Phase 6 (`properties.luxQueryable`, the
-  `useLuxFeatureInfoTemplates` flag, README) plus the 1.6.0 version bump.
-- `3dviewer-plugin-auth`: the `typeUtilisateur` typo and `mymaps_role: number` fixes.
-- `3dviewer`: untouched on purpose — `config/lux.config.json` installs plugins from npm, so
-  the deployment entry waits until both packages are published. The block is in the plugin's
-  README.
+`PluginConfig.templates: Record<string, string>`, keyed by numeric lux layer id, merged
+over a generated default in `src/luxTemplates.ts` (imported by `src/defaultOptions.ts` —
+defaults must live in code, since a deployed VC Map never reads the plugin's shipped
+`config.json`).
+
+Seed it with `scripts/harvest-templates.mjs`: probe the aggregated endpoint over a grid of
+points across Luxembourg with a wide `box1`, collect `layer → template` from the responses,
+emit the module. Committed output plus the script, so it can be re-run. The authoritative
+list is one `SELECT layer, template FROM lux_getfeature_definition` away whenever someone
+with admin-DB access can run it — worth asking for, because the harvest only sees layers
+that have data at a probed point.
+
+### Config changes
+
+Added: `templates`, `minResolution` (default **`3`** → ≈9 m tolerance, matching the
+aggregated endpoint's ±10 m `box1`; at 2 m/px 12% of layers-with-data missed), `ordered`
+(default `true`).
+Removed: `luxGetInfoUrl`, `bigBuffer`, `smallBuffer` (no aggregated call left) and
+`credentials` (the WMS request's credentials come from Cesium's `TrustedServers`, which
+themesync already registers for the proxy URL — the option no longer controls anything).
+
+### Deletions
+
+- `src/luxAggregatedFeatureProvider.ts`
+- most of `src/luxQueryService.ts` — keep only `isLuxQueryLayer()` and
+  `isParcelLayerIdent()`; drop `buildPositionParams`, `requestLuxFeatureInfo`,
+  `postProcessResponse`, `queryLuxFeatureInfoAtPosition`, `queryLuxFeatureInfoByFid`,
+  `buildFidParams`, `resolutionToZoom`, `collectQueryableLayers`
+- `tests/luxQueryResponse.spec.ts` and `tests/fixtures/getfeatureinfo-*.json`, plus the
+  parts of `tests/luxQueryService.spec.ts` that pin the aggregated request
+
+Net: roughly −350 lines of the ~1014 now in `src/`, and the plugin stops speaking the
+custom endpoint's protocol entirely.
+
+## Accepted losses
+
+Consequences of the decisions above, all deliberate:
+
+- Layers whose WMS GetFeatureInfo 500s show nothing — 5 of 250 layers-with-data (2%), plus
+  147 and 1813 found by spot check. One of them (504) uses a remote template the templates
+  package cannot render anyway.
+- `template` cannot be role-dependent, but the backend's lookup is
+  (`LuxGetfeatureDefinition.role == user.role` with a role-less fallback), so a
+  role-specific template variant will render as the default one.
+- Hit tolerance becomes pixel-based (≈3 px × clamped resolution) instead of the ±10 m /
+  ±1 m two-box filter, so which features a click catches will differ from the 2D portal.
+- N requests per click instead of one.
+- The `?fid=` by-id query has no WMS equivalent, so `fid` deep links would need the custom
+  endpoint back.
+- `WMSLayer.reload()` / `setLayers()` destroy `layer.featureProvider` and rebuild from the
+  layer config with no event to hook, so a themesync reload reverts the plugin's provider.
+  Not handled.
+
+## What deviated from the plan
+
+- **The `claimed` set must not gate re-claiming.** `WMSLayer.initialize()` rebuilds the
+  configured provider on first activation and overwrites ours; an "already claimed" early
+  return meant `stateChanged` never put it back, so every layer silently kept its
+  `text/html` provider and the 2D iframe opened. The `instanceof` check is the only
+  idempotence guard now.
+- **Provided features need an empty `Style`.** Returning the real geometries — which the
+  plan wanted, since highlighting then comes almost free — makes the clone `selectFeature()`
+  puts on its scratch layer pickable, and `FeatureProviderInteraction` skips every provider
+  once something was picked. Measured: a second click inside a selected commune issued no
+  request at all. Highlighting is back to being a Phase 7 item needing its own layer.
+- **32 layers answer with a remote-template URL** (`getpoitemplate?layer=…`,
+  `remote_template: true`) which the templates package cannot render, so the harvest filters
+  them out and they fall back to the default template. The seed covers **622** of 732
+  layers; 655 answered at all.
+- **`featureCount` became a config option** (default 50, matching the backend's own OGC
+  path) rather than a constant.
+- **The 3D tileset veto is broader than described.** `FeatureProviderInteraction` runs only
+  when nothing was picked, so wherever a tileset is active and hit — LOD2 buildings are on
+  by default — _no_ 2D lux layer is queried, not merely "3D building clicks don't reach the
+  templates". Same in the two earlier designs, but structural here. This is what made the
+  point-layer test read as a clamp failure until the tilesets were switched off.
+
+## Verification
+
+1. `npm run lint`, `npm run type-check`, `npx vitest run`, `npm run build`.
+2. New unit tests: `toFeatureInfoJson()` against a **captured WMS `application/json`
+   fixture** — capture three during step 3 (cadastre with `PF` + `measurements`, an address
+   point, a multi-feature layer). Assert `template` resolution incl. the `default.html`
+   fallback, `attributes` from `properties`, exact `fid` for a remapped layer, and the
+   parcel annotation. Keep the `isLuxQueryLayer` tests.
+3. `npm run preview -- --vcm https://3d-staging.geoportail.lu/` with a CORS-bypass
+   extension (the geoportail answers `localhost` with `Access-Control-Allow-Origin: *` and
+   `Access-Control-Allow-Credentials: true`, which browsers reject; themesync's own
+   `/themes` call fails the same way). Restart preview after each edit — `--watch` rebuilds
+   `dist/` but the dev server keeps serving the previous transform.
+4. Behavioural checks over CDP, each of which has broken at some point in this work:
+   - **one** queryable layer active → its lux template renders directly, no cluster;
+   - **several** active → cluster list grouped by layer, rows titled from `label` not raw
+     ids, selecting a row renders that layer's template;
+   - request count per click equals the number of active queryable layers, and is **zero**
+     with the feature info tool toggled off;
+   - a **point** layer (152 addresses) is still clickable when zoomed in close — this is
+     the `minResolution` clamp; without it the tolerance collapses to centimetres;
+   - `parcels` renders `PF` and the measurements table, i.e. nested attributes survive;
+   - attribute values render, not just labels (the `v-dompurify-html` directive);
+   - a click into empty space closes the panel.
+5. Re-run with themesync's `useLuxFeatureInfoTemplates` on, to confirm the plugin does not
+   depend on it either way.
+
+## Follow-ups, not in this change
+
+- Get the authoritative template mapping by SQL and replace the harvested seed.
+- Phase 7: highlighting (now free — the provider returns real geometries, and
+  `selectFeature()` clones provided features onto its scratch layer and highlights them),
+  3D building clicks, `fid` deep links, elevation profile.
+- `docs/plan-3dviewer-featureinfo-plugin.md` and `PLAN.md` both describe the aggregated
+  provider and will need rewriting once this lands.

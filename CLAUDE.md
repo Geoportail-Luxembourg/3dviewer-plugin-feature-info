@@ -4,29 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Phases 1-6 of the plan are implemented, phase 5 on its second design — a feature provider
-replaced the original custom interaction; see "What this plugin does".
-`@geoportallux/feature-info-templates` is consumed through a `file:` dependency on the
-sibling `luxembourg-geoportail` checkout, because that package is not published yet (Plan A
-phase 6). `.npmrc` sets `install-links=true` so npm copies rather than symlinks it — a
-symlink whose realpath is outside the project root trips Vite's dev server `fs.allow`.
+The trigger has been through three designs; the current one is standard per-layer WMS
+GetFeatureInfo (see "What this plugin does"). `@geoportallux/feature-info-templates` is
+consumed through a `file:` dependency on the sibling `luxembourg-geoportail` checkout,
+because that package is not published yet (Plan A phase 6). `.npmrc` sets
+`install-links=true` so npm copies rather than symlinks it — a symlink whose realpath is
+outside the project root trips Vite's dev server `fs.allow`.
 
-Not implemented, and deliberately so:
-
-- **Phase 7 enhancements** — highlighting the returned geometries, routing 3D building
-  clicks through the lux templates, `fid` deep links, 3D elevation profile. Two of those
-  changed character with the provider design: highlighting is now nearly free (put the real
-  geometries on the envelope feature, but keep it to _one_ feature or the result becomes a
-  cluster list), and 3D building clicks are now structurally out of reach, because
-  `FeatureProviderInteraction` never runs once a feature was picked.
-- **KML/GPX export.** Was implemented, then deleted as dead code: the templates only emit
-  `export` from `profileComponent`, which is unset. It returns with the 3D profile.
-- **The 3dviewer deployment entry** (plan phase 6.3). `config/lux.config.json` in the
-  `3dviewer` repo is untouched: its `plugins` array installs from npm, and pointing it at an
-  unpublished plugin would leave the WMS layers referencing a feature info view that does
-  not exist. The exact config block to add is in this repo's README. Note the plugin no
-  longer depends on themesync's `useLuxFeatureInfoTemplates` flag — it claims the lux layers
-  itself — so the flag is now a tidiness win, not a prerequisite.
+Deliberately not implemented — the list is in the README under "Not in v1", but the two
+worth knowing here are that **~2% of layers return HTTP 500 from WMS GetFeatureInfo on a
+hit** and show nothing (an accepted trade-off), and that the **3dviewer deployment entry**
+is untouched because `config/lux.config.json` installs plugins from npm and neither package
+is published.
 
 `PLAN.md` in this repo is the working record of the feature-provider refactor: the designs
 that were weighed, why the standard per-layer WMS route was rejected, and where the
@@ -97,65 +86,90 @@ Two traps in the plugin itself, both invisible to lint/type-check/tests:
 
 ## What this plugin does
 
-Reproduces the 2D geoportail's per-position GetFeatureInfo inside the VC Map 3D viewer:
-one click → **one aggregated query over all visible queryable lux layers** → a window
-rendering the response with `@geoportallux/feature-info-templates`.
+Reproduces the geoportail's GetFeatureInfo inside the VC Map 3D viewer, rendering with
+`@geoportallux/feature-info-templates`.
 
-**In one line: a feature provider is the trigger, a registered feature-info view class is
-the renderer.** Both are VC Map extension points; there is no custom interaction. An
-earlier version of this plugin (and of Plan B) used a custom persistent interaction on the
-premise that the built-in flow "cannot express empty-space clicks" — that premise was
-wrong. `FeatureProviderInteraction` runs precisely `if (!event.feature)` and asks every
-active layer's provider for features at the position. Do not reintroduce an interaction
-without re-reading that class first.
+**In one line: standard per-layer WMS GetFeatureInfo does the querying; the plugin only
+supplies the per-layer envelope the templates need.** There is no custom interaction and no
+custom request building. Two earlier designs are recorded in `PLAN.md` — a custom
+persistent interaction, then one aggregating provider hitting the geoportail's custom
+`/getfeatureinfo`. Read that before changing the trigger; both were replaced for reasons
+that are easy to rediscover the hard way.
+
+The key enabler: **the geoportail's WMS answers `INFO_FORMAT=application/json` with the
+lux-enriched payload, not a stock GeoJSON one.** Features carry `fid` in composite
+`<layerId>_<featureId>` form (with the backend's layer remap applied — 262 answers
+`359_…`), `id`, `alias`, and a `properties` bag identical to the aggregated endpoint's
+`attributes`, nested `PF` and `measurements[]` included. Geometry is EPSG:2169.
 
 The pieces, one module each:
 
-- **`luxQueryService.ts`** — collects eligible layers, builds the request, post-processes
-  the response. `event.position` is EPSG:3857 in both OL and Cesium maps and is transformed
-  to EPSG:2169; `box1`/`box2` are ±10 m/±1 m boxes in 2169 while `srs` announces 3857 (the
-  server's contract, verified against the live backend), and
-  `WIDTH`/`HEIGHT`/`X`/`Y`/`BBOX` describe a synthetic north-up viewport centred on the
-  point, with `zoom` from `map.getCurrentResolution()`. Eligible layers are active,
-  non-transparent, carry `properties.luxId` and are flagged by `properties.luxQueryable` —
-  falling back to `allowPicking` on 2D layers for a themesync older than 1.6. Exports
-  `isLuxQueryLayer()`, also used for layer claiming.
-- **`luxAggregatedFeatureProvider.ts`** — `extends AbstractFeatureProvider`. Returns
-  **exactly one** envelope feature: a point at the click carrying the whole
-  `FeatureInfoJSON[]` under `luxContentSymbol`, tagged `featureInfoViewSymbol` so
-  `getFeatureInfoViewForFeature()` picks the lux view before any per-layer resolution.
-  One feature is what preserves the 2D stacked panel — two or more and VC Map opens its
-  cluster list instead. Two non-negotiables: it **gates on the `featureInfo` toolbox
-  toggle** (nothing in core or ui ever deactivates `FeatureProviderInteraction`, so
-  providers are asked on every click, tool or no tool), and it gives its feature an **empty
-  `Style`** (`selectFeature()` clones a provided feature onto the internal scratch layer
-  with `olcs_allowPicking: true`; without an empty style that clone would swallow the next
-  click at the same spot).
+- **`luxWmsFeatureProvider.ts`** — `extends WMSFeatureProvider`, built from the layer's own
+  public options (the same nine `WMSLayer._setFeatureProvider()` reads) with
+  `responseType: 'application/json'`, the EPSG:2169 projection and `FEATURE_COUNT`. Four
+  behaviours here are contract, not polish:
+  1. **gates on the `featureInfo` toolbox toggle** — `FeatureProviderInteraction` is in VC
+     Map's immutable base chain and nothing ever deactivates it, so providers are asked on
+     every click, tool or no tool;
+  2. **floors the resolution** at `minResolution` — the server's tolerance is ~3 px and ol
+     derives the queried pixel from the resolution, so the resolution _is_ the tolerance;
+     a tilted Cesium camera reports sub-metre values and point layers then need centimetre
+     accuracy (measured);
+  3. **stashes the raw response feature** — ol's GeoJSON reader keeps only
+     `id`/`geometry`/`properties`, dropping `fid` and `alias` and reprojecting the geometry;
+     rebuilding the fid as `${luxId}_${id}` is wrong for remapped layers;
+  4. **gives features an empty `Style`** — `selectFeature()` clones a provided feature onto
+     its scratch layer forcing `olcs_allowPicking: true`, and a visible clone is then picked
+     on the next click, making `FeatureProviderInteraction` skip every provider. Measured: a
+     second click inside a selected commune issued no request at all.
+- **`luxFeatureInfoJson.ts`** — rebuilds the per-layer envelope a WMS response cannot carry:
+  `template` from the mapping, `layer` from `luxId`, `layerLabel` from the layer name (the
+  templates translate it via the `layers` i18n namespace), `ordered` from config,
+  `has_profile: false`, plus the parcel annotation.
+- **`luxTemplates.ts`** — GENERATED by `npm run harvest-templates`. 622 layer ids to
+  template filenames. The mapping exists only in the backend table
+  `lux_getfeature_definition`, keyed by numeric layer id; unmapped layers render
+  `default.html`, which is also how the backend signals "render generically".
+- **`luxQueryService.ts`** — just two predicates now: `isLuxQueryLayer()` (which layers to
+  take over) and `isParcelLayerIdent()`.
 - **`luxTemplateFeatureInfoView.ts`** — registered in `app.featureInfoClassRegistry` during
-  `initialize()`; `getWindowComponentOptions()` reads the payload off the feature. The whole
-  built-in window/selection/toolbox lifecycle comes for free.
+  `initialize()`; reads the envelope off the feature. The window/selection/toolbox lifecycle
+  is the framework's.
 - **`LuxFeatureInfoWindow.vue`** — a plain wrapper that `provide()`s `LUX_TPL_CONTEXT` and
   `LUX_TPL_I18N` in `setup()` (reaching the plugin via `inject('vcsApp')` +
   `plugins.getByKey`, because a config-defined view cannot hand them down), sets
   `.lux-tpl-root`, imports the package CSS, renders the shared dispatcher. **No child Vue
-  app / `createApp` mount** — that remains the documented escalation path (and the
-  prerequisite for a shadow-DOM mount) if Vuetify styles bleed in.
+  app / `createApp` mount** — that remains the documented escalation path if Vuetify styles
+  bleed in.
 - **`luxTplRuntime.ts`** — a dedicated i18next instance (not the singleton) with
   `i18next-http-backend`, the `LuxTplContext`, and a `localeChanged` listener.
 
+### Multiple features means a cluster list
+
+Two or more features across all providers — **including two from one layer** — make
+`FeatureProviderInteraction` wrap them in a synthetic cluster feature, and VC Map opens its
+cluster list: a searchable window grouped by layer, one row per feature, and selecting a row
+renders that feature's template on the right. A single feature opens its panel directly.
+This is deliberate; the 2D portal's single stacked panel would require custom aggregation.
+
+Rows are titled `attributes[clusterFeatureTitleProperty] || attributes.title ||
+attributes.name || feature.getId()`, so the plugin sets
+`properties.clusterFeatureTitleProperty = 'label'` when claiming a layer — lux features
+carry a composed `label`, and without it most rows show a raw fid. Layers with no such
+attribute (PAG, for instance) still show ids.
+
 ### Claiming the lux layers
 
-`index.ts` clears `layer.featureProvider` on every layer `isLuxQueryLayer()` accepts, on
-`layers.added` and again on each `stateChanged` (a `WMSLayer` only builds its provider in
-`initialize()`, i.e. on first activation).
+`index.ts` replaces `layer.featureProvider` on every layer `isLuxQueryLayer()` accepts.
+This is the whole mechanism, and it has one trap: `WMSLayer.initialize()` builds the
+configured provider on first activation and **overwrites** whatever is there, with no event
+to hook. So claiming runs on every `app.layers.stateChanged` and re-claims whenever the
+provider is not ours — the `instanceof` check is the only idempotence guard, deliberately.
+An early-return on "already claimed" silently breaks everything, which is exactly what
+happened during implementation.
 
-Why: with themesync's `useLuxFeatureInfoTemplates` off, its WMS layers carry a `text/html`
-`WMSFeatureProvider`, which fabricates a placeholder feature on every click **without
-issuing any request** — that is how `IframeWmsFeatureInfoView` gets its position. Left
-alone, each placeholder joins this plugin's envelope feature, VC Map builds a cluster
-feature and opens its list window instead of the stacked panel, and empty-space clicks stop
-clearing the selection. Clearing them also means this design works whether that flag is on
-or off, which is what keeps `preview --vcm` against staging usable.
+Still unhandled: `WMSLayer.reload()` / `setLayers()` destroy the provider and rebuild from
+the layer config without firing `stateChanged`, so a themesync reload reverts ours.
 
 ### The templates package contract
 
@@ -217,26 +231,37 @@ initialize serially in config order, so this plugin must be listed **before** th
 
 ## Verified, and still open
 
-Checked against the live backend and a real browser session driven over CDP against
-`https://3d-staging.geoportail.lu` (themesync 1.5.2, `useLuxFeatureInfoTemplates` absent):
+Driven over CDP against `https://3d-staging.geoportail.lu` (themesync 1.5.2, no config
+change). Each of these broke at some point during implementation:
 
-- **CORS is fine from the deployed origin.** `/getfeatureinfo` and `/assets/locales/*.json`
-  answer `https://3d.geoportail.lu` with a properly echoed origin and
-  `Access-Control-Allow-Credentials: true`. Themesync's `TrustedServers`/proxy pattern is
-  not needed. From `localhost` they answer `*` + credentials instead, which browsers
-  reject — see "Running it".
-- **The request contract holds.** The captured response is in `tests/fixtures/`.
-- **End to end works against an unmodified deployment** — themesync 1.5.2, no config
-  change, via the `allowPicking` fallback. Driven over CDP, all five behaviours checked:
-  one active queryable layer and four both render the stacked panel from **one** request
-  (`302` / `147,698,262,302`) with no cluster window and no `featureInfo2d` iframe; a click
-  where no layer has data closes the panel; with the tool toggled off a click issues **zero**
-  requests; attribute values render, not just labels.
+- one queryable layer returning one feature → its lux template renders directly;
+- a layer returning several features, or several layers → VC Map's cluster list, rows
+  titled from `label`, and selecting a row renders that feature's template. Confirmed with
+  cadastre: `parcels.html` with the nested `PF` fields ("Contenance : 0ha 01a 56ca") and the
+  measurements links;
+- a click where no layer has data closes the panel;
+- with the feature info tool off, a click issues **zero** requests;
+- a point layer stays clickable with the camera 150 m up: the map reported 0.638 m/px and
+  the request went out at 2.39 m/px (BBOX 611 m over 256 px), finding the address. Without
+  the clamp the tolerance is centimetres;
+- a second click inside an already-selected geometry still queries — this needs the empty
+  style on provided features;
+- attribute values render, not just labels (the `v-dompurify-html` directive).
 
-Still unvalidated:
+Coverage, measured against the live service: of 732 queryable lux layers, 250 had data at
+one test point per the aggregated endpoint; via WMS JSON at 2 m/px 215 returned features, 30
+returned empty and 5 returned HTTP 500. All 17 distinct "empty" ones recovered at a coarser
+resolution, so the genuine gap is 5 (2%) — hence the clamp being the most important knob
+here.
 
-- `zoom` semantics when derived from a tilted Cesium camera (the backend accepts the value;
-  nothing confirms it is interpreted as the 2D portal intends).
-- Vuetify style bleed _into_ the templates — never observed, but only `default.html` and
-  `parcels.html` have been exercised in 3D.
-- Every other template.
+Still open:
+
+- **A 3D tileset click vetoes the WMS path entirely.** `FeatureProviderInteraction` only
+  runs when nothing was picked, so wherever a tileset is active and hit — LOD2 buildings are
+  on by default in the deployed viewer — no 2D lux layer is queried. Same as the previous
+  designs, but structural here.
+- Vuetify style bleed _into_ the templates — never observed; `default.html`, `parcels.html`
+  and `adresse.html` have been exercised in 3D.
+- Whether protected layers get their cookies. Public layers go to `luxOwsUrl` without
+  credentials; themesync registers only the proxy URL in Cesium's `TrustedServers`, and only
+  requests to a trusted server get `credentials: 'include'`.

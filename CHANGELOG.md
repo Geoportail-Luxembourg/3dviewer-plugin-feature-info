@@ -2,9 +2,14 @@
 
 Initial release.
 
-- Aggregated per-position GetFeatureInfo over all visible queryable lux layers, triggered by
-  a custom `AbstractFeatureProvider` on a plugin-owned layer, gated on VC Map's feature info
-  toolbox toggle.
+- Feature info via standard per-layer WMS GetFeatureInfo (`INFO_FORMAT=application/json`),
+  which the geoportail answers with its enriched payload. The plugin replaces the feature
+  provider on each queryable lux layer with a thin `WMSFeatureProvider` subclass and
+  supplies the per-layer envelope the templates need; VC Map does the querying, the
+  clustering and the window lifecycle.
+- A generated layer id to template mapping (`src/luxTemplates.ts`, 622 layers), since that
+  association exists only in the backend's `lux_getfeature_definition` table. Regenerate
+  with `npm run harvest-templates`.
 - `LuxTemplateFeatureInfoView`, registered in `app.featureInfoClassRegistry`, renders the
   response with `@geoportallux/feature-info-templates`.
 - i18next instance for the templates, fed from the geoportail's deployed locale artifacts

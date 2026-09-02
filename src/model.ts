@@ -14,6 +14,12 @@ export const LUX_FEATURE_INFO_VIEW_NAME = 'luxFeatureInfo';
 export const I18N_NAMESPACE = 'lux3dviewerPluginFeatureInfo';
 
 /**
+ * Template the geoportail backend uses when a layer has no specific one, and
+ * what the shared dispatcher falls back to for any name it does not know.
+ */
+export const DEFAULT_TEMPLATE = 'default.html';
+
+/**
  * Minimal view of the auth plugin's public API. Only `userState` is read, and
  * only when that plugin happens to be loaded.
  */
@@ -25,8 +31,6 @@ export type LuxAuthPluginLike = {
 };
 
 export type PluginConfig = {
-  /** GetFeatureInfo endpoint, e.g. `https://map.geoportail.lu/getfeatureinfo`. */
-  luxGetInfoUrl: string;
   /**
    * Base URL of the geoportail's static locale files, e.g.
    * `https://map.geoportail.lu/assets/locales`. `{{ns}}.{{lng}}.json` is
@@ -35,15 +39,29 @@ export type PluginConfig = {
   luxLocalesUrl: string;
   /** URLs and role ids the feature info templates need. */
   templatesConfig: LuxTplConfig;
-  /** Credentials mode for the GetFeatureInfo and locale requests. */
-  credentials?: RequestCredentials;
   /**
-   * Buffer in meters (EPSG:2169) around the clicked point sent as `box1`. The
-   * geoportail's coordinate query path uses 10.
+   * Lux layer id to template filename, merged over the generated seed in
+   * `luxTemplates.ts`. Anything unmapped renders with {@link DEFAULT_TEMPLATE}.
+   * The mapping exists only in the backend's `lux_getfeature_definition` table,
+   * so it cannot be derived from the themes API or a WMS response.
    */
-  bigBuffer: number;
-  /** Buffer in meters sent as `box2`. The geoportail uses 1. */
-  smallBuffer: number;
+  templates: Record<string, string>;
+  /**
+   * Floor, in meters per pixel, for the resolution handed to the WMS
+   * GetFeatureInfo request. The server's hit tolerance is a few pixels, so the
+   * resolution is what sets it in ground units — and a tilted 3D camera reports
+   * sub-metre resolutions, which would make point layers unclickable. The
+   * default of 3 gives roughly the ±10 m the 2D portal searches.
+   */
+  minResolution: number;
+  /**
+   * Whether the templates keep the server's attribute order (`true`) or sort
+   * alphabetically. The aggregated endpoint decided this per layer; a standard
+   * WMS response cannot say, so it is one setting for all layers.
+   */
+  ordered: boolean;
+  /** `FEATURE_COUNT` sent per layer. WMS servers default to 1. */
+  featureCount: number;
 };
 
 export type PluginState = Record<never, never>;

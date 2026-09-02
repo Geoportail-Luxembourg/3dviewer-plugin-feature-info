@@ -1,7 +1,7 @@
 import { AbstractFeatureInfoView, WindowSlot } from '@vcmap/ui';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 import LuxFeatureInfoWindow from './LuxFeatureInfoWindow.vue';
-import { luxContentSymbol } from './luxAggregatedFeatureProvider.js';
+import { luxContentSymbol } from './luxWmsFeatureProvider.js';
 import { I18N_NAMESPACE } from './model.js';
 
 /*
@@ -20,16 +20,15 @@ type FeatureInfoComponent = ConstructorParameters<
 >[1];
 
 /**
- * Renders an aggregated lux GetFeatureInfo response with the shared geoportail
- * templates.
+ * Renders a lux GetFeatureInfo response with the shared geoportail templates.
  *
- * Unlike the built-in views this one is not derived from a single feature's
- * attributes — the response covers every visible queryable layer at the clicked
- * position and arrives on the feature under {@link luxContentSymbol}, put there
- * by `LuxAggregatedFeatureProvider`. Everything else is the framework's: the
- * provider tags the feature with `featureInfoViewSymbol` so this view is
- * selected without per-layer resolution, and `featureInfo.selectFeature()` then
- * handles the window, the selection and the toolbox session.
+ * Unlike the built-in views this one does not render the feature's attributes
+ * directly: the templates take a per-layer envelope, which `LuxWmsFeatureProvider`
+ * builds and leaves on the feature under {@link luxContentSymbol}. Everything
+ * else is the framework's — the provider tags the feature with
+ * `featureInfoViewSymbol` so this view is selected without per-layer resolution,
+ * and `featureInfo.selectFeature()` handles the window, the selection and the
+ * toolbox session.
  */
 class LuxTemplateFeatureInfoView extends AbstractFeatureInfoView {
   static get className(): string {
