@@ -57,11 +57,11 @@ Four things in the subclass that are contract, not refinement:
 
 ## Requirements
 
-| Requirement                                  | Why                                                                                                                                                                                                                 |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@geoportallux/lux-3dviewer-themesync` ≥ 1.6 | writes `properties.luxId` and `properties.luxQueryable` on lux layers. Older builds are tolerated: the plugin then falls back to `allowPicking` on 2D layers, which carried the same `is_queryable` bit.            |
-| `@geoportallux/lux-3dviewer-plugin-auth`     | **optional.** Supplies the logged-in user for the templates that prefill an email or gate the solar economic calculator. Without it, templates render anonymously.                                                  |
-| CORS on the WMS and `luxLocalesUrl`          | both are served from the geoportail origin and must allow the 3D viewer's origin. Verified for `https://3d.geoportail.lu`; other origins (including `localhost`) need a proxy or a browser bypass, see Development. |
+| Requirement                              | Why                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@geoportallux/lux-3dviewer-themesync`   | any version. The plugin reads only `properties.luxId`, `properties.is3DLayer` and `allowPicking`, which themesync has always written — `allowPicking` carries the theme item's `is_queryable`. No themesync change is needed for this plugin, and removing the plugin restores the `featureInfo2d` iframe on its own. |
+| `@geoportallux/lux-3dviewer-plugin-auth` | **optional.** Supplies the logged-in user for the templates that prefill an email or gate the solar economic calculator. Without it, templates render anonymously.                                                                                                                                                    |
+| CORS on the WMS and `luxLocalesUrl`      | both are served from the geoportail origin and must allow the 3D viewer's origin. Verified for `https://3d.geoportail.lu`; other origins (including `localhost`) need a proxy or a browser bypass, see Development.                                                                                                   |
 
 **Ordering constraint:** plugins initialize serially in config order and are parsed before a
 module's `featureInfo` items. List this plugin **before themesync** in the `plugins` array,
@@ -88,10 +88,11 @@ reference it.
 | `ordered`         | `true`                                     | Keep the server's attribute order, or sort alphabetically. The aggregated endpoint decided this per layer; a WMS response cannot say, so it is one setting for all.                          |
 | `featureCount`    | `50`                                       | `FEATURE_COUNT` per layer. WMS servers default to 1.                                                                                                                                         |
 
-The plugin takes the lux layers over by itself, so themesync's
-`useLuxFeatureInfoTemplates` flag is not required — with it off the plugin simply replaces
-the `text/html` providers themesync configured. Turning it on is tidier, since themesync
-then does not configure them in the first place.
+The plugin takes the lux layers over by itself: on activation it replaces the `text/html`
+feature provider themesync configured with its own. Nothing has to be configured on the
+themesync side, and because the layers keep pointing at `featureInfo2d`, dropping this
+plugin from the `plugins` array restores the previous iframe behaviour with no other
+change.
 
 ## The query
 

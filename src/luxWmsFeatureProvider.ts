@@ -166,7 +166,9 @@ class LuxWmsFeatureProvider extends WMSFeatureProvider {
       const raw = (tagged[luxRawSymbol] ?? {}) as LuxWmsFeature;
       tagged[luxContentSymbol] = [toFeatureInfoJson(raw, layer, this._config)];
       // Beats the layer's own `properties.featureInfo`, which themesync points
-      // at the 2D iframe view unless `useLuxFeatureInfoTemplates` is on.
+      // at the 2D iframe view — that is what lets this plugin take the layers
+      // over without themesync knowing about it, and what makes removing the
+      // plugin fall back to the iframe on its own.
       if (view) {
         tagged[featureInfoViewSymbol] = view;
       }

@@ -228,8 +228,9 @@ Consequences of the decisions above, all deliberate:
    - `parcels` renders `PF` and the measurements table, i.e. nested attributes survive;
    - attribute values render, not just labels (sanitized by the package itself);
    - a click into empty space closes the panel.
-5. Re-run with themesync's `useLuxFeatureInfoTemplates` on, to confirm the plugin does not
-   depend on it either way.
+5. Confirm nothing is needed from themesync: the run above is against a deployment whose
+   themesync writes `featureInfo: { responseType: 'text/html' }` and
+   `properties.featureInfo: 'featureInfo2d'`, i.e. the unmodified one.
 
 ## Follow-ups, not in this change
 

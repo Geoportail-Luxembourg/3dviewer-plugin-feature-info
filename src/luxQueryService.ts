@@ -26,11 +26,13 @@ export function isParcelLayerIdent(value?: string | number | null): boolean {
 /**
  * Whether this is a lux layer the plugin takes feature info over for.
  *
- * `properties.luxQueryable` is written by themesync from
- * `metadata.is_queryable`. Older themesync builds carried that same bit only as
- * the layer's `allowPicking`, so it is the fallback — restricted to 2D layers,
- * because themesync forces `allowPicking` on for 3D tilesets, whose ids the
- * GetFeatureInfo backend does not serve.
+ * Reads only properties themesync has always written, so the plugin needs no
+ * change on that side: `allowPicking` carries `metadata.is_queryable`, and
+ * `is3DLayer` excludes the tilesets — themesync forces `allowPicking` on for
+ * those, and the GetFeatureInfo backend does not serve their ids.
+ *
+ * `properties.luxQueryable` is honoured when present, purely so an explicit
+ * signal would win if themesync ever adds one; it is not expected today.
  */
 export function isLuxQueryLayer(layer: Layer): boolean {
   const { luxId, luxQueryable, is3DLayer } = layer.properties ?? {};

@@ -70,8 +70,8 @@ Three facts, each of which cost a debugging session:
   serving the previously transformed module; a hard reload with the cache disabled still
   gets the old bundle. Restart `npm run preview` after every edit. Verified by byte-diffing
   the on-disk bundle against the served one.
-- **No 2D lux layer is active on startup**, so `collectQueryableLayers()` returns `[]` and
-  the click is a no-op until a layer is switched on in the content tree.
+- **No 2D lux layer is active on startup**, so no layer has a provider to ask and the
+  click is a no-op until one is switched on in the content tree.
 
 Two traps in the plugin itself, both invisible to lint/type-check/tests:
 
@@ -168,8 +168,15 @@ provider is not ours — the `instanceof` check is the only idempotence guard, d
 An early-return on "already claimed" silently breaks everything, which is exactly what
 happened during implementation.
 
-Still unhandled: `WMSLayer.reload()` / `setLayers()` destroy the provider and rebuild from
-the layer config without firing `stateChanged`, so a themesync reload reverts ours.
+`WMSLayer.reload()` / `setLayers()` also destroy the provider and rebuild from the layer
+config, and `reload()` does **not** fire `stateChanged` (it only rebuilds implementations
+via `forceRedraw()`), so that path would silently revert ours. It has no reachable trigger
+here: `reload()` comes from `set url`, `set headers`, `set ignoreMapLayerTypes` or
+`setLayers()`, none of which anything in the org calls; `set locale` reloads only when the
+url is a locale-record object and themesync passes a plain string, so switching language
+does not touch these layers; and themesync's `reloadThemes()` does `removeModule` + reload,
+which rebuilds the layers as new objects and so goes through `stateChanged` anyway. Worth
+re-checking if a layer ever gets its url or headers reassigned at runtime.
 
 ### The templates package contract
 
@@ -197,12 +204,12 @@ fallback) and `notify` to `app.notifier.add`.
 
 Sibling repos under `/home/tkohr/Projets/luxembourg/git/`:
 
-| Path                       | Role                                                                                                                                                                              |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vcs/3dviewer`             | The VC Map app. `config/lux.config.json` holds the deployed `plugins` array.                                                                                                      |
-| `vcs/3dviewer-themesync`   | Builds VC Map layers from geoportail themes. Owns `properties.luxId`; must also start writing `properties.luxQueryable` (Plan B phase 6). Has its own CLAUDE.md.                  |
-| `vcs/3dviewer-plugin-auth` | The structural template for this plugin, and the source of `userState`.                                                                                                           |
-| `luxembourg-geoportail`    | The 2D app. Reference implementation in `src/composables/info/feature-info.composable.ts` and `src/components/info/feature-info.vue`; the templates package; both plan documents. |
+| Path                       | Role                                                                                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `vcs/3dviewer`             | The VC Map app. `config/lux.config.json` holds the deployed `plugins` array.                                                                                                                                                                     |
+| `vcs/3dviewer-themesync`   | Builds VC Map layers from geoportail themes. Owns `properties.luxId`, `properties.is3DLayer` and `allowPicking` — everything this plugin reads. **Deliberately knows nothing about this plugin**; needs no change for it. Has its own CLAUDE.md. |
+| `vcs/3dviewer-plugin-auth` | The structural template for this plugin, and the source of `userState`.                                                                                                                                                                          |
+| `luxembourg-geoportail`    | The 2D app. Reference implementation in `src/composables/info/feature-info.composable.ts` and `src/components/info/feature-info.vue`; the templates package; both plan documents.                                                                |
 
 Coupling between plugins is deliberately loose: `app.plugins.getByKey('<package name>')`
 plus a string contract, exactly as the auth plugin reaches themesync's `reloadThemes()`.
@@ -225,8 +232,10 @@ initialize serially in config order, so this plugin must be listed **before** th
 - **Imports** — `.js` extensions on relative TS imports (`./authService.js`), matching the
   sibling plugins.
 - **Config** — `config.json` is the plugin's default config, merged with what
-  `lux.config.json` passes. Runtime URLs (`luxGetInfoUrl`, `luxLocalesUrl`,
-  `templatesConfig`, `credentials`) belong there, never hard-coded.
+  `lux.config.json` passes, but **defaults live in `src/defaultOptions.ts`** — a deployed
+  VC Map never reads a plugin's shipped `config.json`. Runtime values (`luxLocalesUrl`,
+  `templatesConfig`, `templates`, `minResolution`) belong in one of the two, never
+  hard-coded at the point of use.
 - ESLint is `@vcsuite/eslint-config` (`configs.vueTs`); Prettier config comes from the same
   package via the `prettier` field in `package.json`.
 - Tests run in jsdom; `tests/setup.js` mocks ResizeObserver + canvas and sets

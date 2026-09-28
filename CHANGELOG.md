@@ -16,5 +16,6 @@ Initial release.
   and kept in sync with the VC Map locale.
 - Logged-in user read from `@geoportallux/lux-3dviewer-plugin-auth` when present.
 
-Requires `@geoportallux/lux-3dviewer-themesync` >= 1.6 for `properties.luxQueryable`, and
-must be listed before it in the app config's `plugins` array.
+Requires no themesync change — it reads only properties themesync already writes — but
+must be listed before themesync in the app config's `plugins` array, so the feature info
+view class is registered before themesync's layers are parsed.
