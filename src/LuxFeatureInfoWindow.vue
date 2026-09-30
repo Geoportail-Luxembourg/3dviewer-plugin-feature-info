@@ -58,5 +58,6 @@
   .lux-feature-info-window {
     padding: 8px;
     overflow-x: hidden;
+    --lux-tpl-white-by-default: black;
   }
 </style>
