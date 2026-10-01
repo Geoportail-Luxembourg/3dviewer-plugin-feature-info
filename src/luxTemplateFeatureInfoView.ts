@@ -64,7 +64,6 @@ class LuxTemplateFeatureInfoView extends AbstractFeatureInfoView {
       position: windowOptions.position ?? { width: 400 },
       props: {
         content,
-        currentUrl: window.location.href,
         // VC Map closes a feature info window when its layer is deactivated or
         // becomes unsupported, and matches on this prop.
         layerName: layer.name,

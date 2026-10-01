@@ -14,8 +14,6 @@
   defineProps<{
     /** One entry per layer that returned features, in 2D response order. */
     content: FeatureInfoJSON[];
-    /** Permalink the templates offer as "link to this feature". */
-    currentUrl: string;
     /**
      * Declared so VC Map can match the window against its layer when that
      * layer is deactivated. Not rendered.
@@ -49,7 +47,6 @@
       v-for="(layers, index) in content"
       :key="index"
       :layers="layers"
-      :current-url="currentUrl"
     />
   </div>
 </template>
