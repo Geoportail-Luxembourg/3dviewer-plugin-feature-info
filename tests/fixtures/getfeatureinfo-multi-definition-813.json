@@ -1,0 +1,188 @@
+[
+ {
+  "remote_template": false,
+  "template": "bus_wo_title.html",
+  "layer": "813",
+  "ordered": false,
+  "features": [],
+  "has_profile": false,
+  "total_features_count": 0,
+  "features_count": 0
+ },
+ {
+  "remote_template": false,
+  "template": "default_table.html",
+  "layer": "813",
+  "ordered": false,
+  "features": [],
+  "has_profile": false,
+  "total_features_count": 0,
+  "features_count": 0
+ },
+ {
+  "remote_template": false,
+  "template": "default_table.html",
+  "layer": "813",
+  "ordered": false,
+  "features": [
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "MultiLineString",
+     "coordinates": [
+      [
+       [
+        93996.63528900602,
+        68004.55780707758
+       ],
+       [
+        93990.86875646895,
+        67995.64516382817
+       ],
+       [
+        93982.2075178279,
+        67986.7251137782
+       ]
+      ]
+     ]
+    },
+    "fid": null,
+    "id": null,
+    "attributes": {
+     "Line": "D07",
+     "Name": "Geesseknäppchen - Stadtbredimus - Remich (cs)"
+    },
+    "alias": {
+     "OBJECTID_1": "OBJECTID_1",
+     "Line": "Line",
+     "Name": "Name",
+     "Shape_Length": "Shape_Length"
+    }
+   },
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "MultiLineString",
+     "coordinates": [
+      [
+       [
+        76045.05125012746,
+        74190.63392916252
+       ],
+       [
+        76041.44171637447,
+        74197.3098747565
+       ],
+       [
+        76024.79358547667,
+        74166.1795592691
+       ]
+      ]
+     ]
+    },
+    "fid": null,
+    "id": null,
+    "attributes": {
+     "Line": "D42",
+     "Name": "Larochette - Blaschette - Geesseknäppchen (cs)"
+    },
+    "alias": {
+     "OBJECTID_1": "OBJECTID_1",
+     "Line": "Line",
+     "Name": "Name",
+     "Shape_Length": "Shape_Length"
+    }
+   }
+  ],
+  "has_profile": false,
+  "total_features_count": 3,
+  "features_count": 3
+ },
+ {
+  "remote_template": false,
+  "template": "default_table.html",
+  "layer": "813",
+  "ordered": false,
+  "features": [
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "MultiLineString",
+     "coordinates": [
+      [
+       [
+        73561.68724445582,
+        74882.01459257721
+       ],
+       [
+        73561.48331370439,
+        74881.85361867935
+       ],
+       [
+        73555.85308561844,
+        74876.77340036756
+       ]
+      ]
+     ]
+    },
+    "fid": null,
+    "id": null,
+    "attributes": {
+     "Line": "10",
+     "Name": "BERTRANGE, Belle Étoile - STEINSEL, Buergaass"
+    },
+    "alias": {
+     "OBJECTID": "OBJECTID",
+     "Line": "Line",
+     "Name": "Name"
+    }
+   },
+   {
+    "type": "Feature",
+    "geometry": {
+     "type": "MultiLineString",
+     "coordinates": [
+      [
+       [
+        76904.46243250006,
+        72937.04445096743
+       ],
+       [
+        76905.87248723894,
+        72938.17443412294
+       ],
+       [
+        76907.21259910867,
+        72939.20452077284
+       ]
+      ]
+     ]
+    },
+    "fid": null,
+    "id": null,
+    "attributes": {
+     "Line": "13",
+     "Name": "KOHLENBERG, Boy Konen - BELAIR, Centre Hospitalier"
+    },
+    "alias": {
+     "OBJECTID": "OBJECTID",
+     "Line": "Line",
+     "Name": "Name"
+    }
+   }
+  ],
+  "has_profile": false,
+  "total_features_count": 17,
+  "features_count": 17
+ },
+ {
+  "remote_template": false,
+  "template": "default_table.html",
+  "layer": "813",
+  "ordered": false,
+  "features": [],
+  "has_profile": false,
+  "total_features_count": 0,
+  "features_count": 0
+ }
+]

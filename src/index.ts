@@ -11,7 +11,7 @@ import getDefaultOptions from './defaultOptions.js';
 import { getLuxProjection } from './luxProjection.js';
 import { isLuxQueryLayer } from './luxQueryService.js';
 import LuxTemplateFeatureInfoView from './luxTemplateFeatureInfoView.js';
-import LuxWmsFeatureProvider from './luxWmsFeatureProvider.js';
+import LuxAggregatedInteraction from './luxAggregatedInteraction.js';
 import { createLuxTplRuntime } from './luxTplRuntime.js';
 import type { LuxTplRuntime } from './luxTplRuntime.js';
 import i18n from './i18n.js';
@@ -31,49 +31,41 @@ export default function lux3dviewerPluginFeatureInfo(
       ...getDefaultOptions().templatesConfig,
       ...config.templatesConfig,
     },
-    templates: {
-      ...getDefaultOptions().templates,
-      ...config.templates,
-    },
   };
 
   let app: VcsUiApp | null = null;
   let runtime: LuxTplRuntime | null = null;
   let ownedView: LuxTemplateFeatureInfoView | null = null;
   const listeners: (() => void)[] = [];
-  const claimed = new Set<Layer>();
 
   /**
-   * Give every queryable lux layer a feature provider that asks for JSON.
+   * Take a lux layer over: this plugin answers for it, nobody else.
    *
-   * themesync configures `featureInfo: { responseType: 'text/html' }` on those
-   * layers, which produces a provider that fabricates a placeholder feature per
-   * click *without any request* — that is how the `featureInfo2d` iframe gets its
-   * position. Replacing it with {@link LuxWmsFeatureProvider} is the whole
-   * mechanism of this plugin: from there VC Map's own `FeatureProviderInteraction`
-   * does the querying and `selectFeature()` the rendering.
+   * Two things, both required.
    *
-   * `WMSLayer.initialize()` builds the configured provider on first activation
-   * and overwrites whatever is there, so claiming has to survive that: it runs
-   * on every `stateChanged` and re-claims whenever the provider is not ours.
-   * `claimed` only records which layers to hand back on destroy.
+   * The feature provider themesync configures (`featureInfo:
+   * { responseType: 'text/html' }`) fabricates a placeholder feature per click
+   * *without any request*, which is how the `featureInfo2d` iframe gets its
+   * position. `FeatureProviderInteraction` runs right after this plugin's
+   * interaction, so leaving it in place means every click the aggregated query
+   * answers nothing for — a click on a street, say — opens that iframe instead
+   * of closing the panel. Clearing it has to be repeated, because
+   * `WMSLayer.initialize()` rebuilds the configured provider on first activation
+   * and fires no event of its own; `stateChanged` is the hook that covers it.
+   *
+   * `clusterFeatureTitleProperty` titles the cluster rows: the fallback chain is
+   * `attributes[prop]`, `title`, `name`, then the feature id, and lux features
+   * carry a composed `label`.
    */
   function claimLayer(layer: Layer): void {
-    if (!app || !isLuxQueryLayer(layer)) {
+    if (!isLuxQueryLayer(layer)) {
       return;
     }
-    // The `instanceof` check is the only idempotence guard on purpose: a layer
-    // has to be re-claimable, because `WMSLayer.initialize()` rebuilds the
-    // configured provider on first activation and would otherwise win.
-    if (layer.featureProvider instanceof LuxWmsFeatureProvider) {
-      return;
+    if (layer.featureProvider) {
+      layer.featureProvider.destroy();
+      layer.featureProvider = undefined;
     }
-    layer.featureProvider?.destroy();
-    layer.featureProvider = new LuxWmsFeatureProvider(app, layer, pluginConfig);
-    // Cluster rows fall back to `attributes.title`/`name`/the feature id; lux
-    // features carry a composed `label`, so without this most rows show an id.
     layer.properties.clusterFeatureTitleProperty = 'label';
-    claimed.add(layer);
   }
 
   return {
@@ -113,8 +105,8 @@ export default function lux3dviewerPluginFeatureInfo(
       app = vcsUiApp;
 
       // A module config may define its own instance; only fall back to a
-      // default one when it did not. The providers resolve the view by name, so
-      // it has to exist before the first click, not before the first layer.
+      // default one when it did not. The interaction resolves the view by name,
+      // so it has to exist before the first click.
       if (!app.featureInfo.hasKey(LUX_FEATURE_INFO_VIEW_NAME)) {
         ownedView = new LuxTemplateFeatureInfoView({
           name: LUX_FEATURE_INFO_VIEW_NAME,
@@ -123,6 +115,16 @@ export default function lux3dviewerPluginFeatureInfo(
       }
 
       [...app.layers].forEach(claimLayer);
+
+      // Index 3 is immediately before VC Map's own `FeatureProviderInteraction`
+      // in the base chain, which skips its per-layer fan-out once `event.feature`
+      // is set. `addPersistentInteraction` defaults to 4, i.e. after it.
+      listeners.push(
+        app.maps.eventHandler.addPersistentInteraction(
+          new LuxAggregatedInteraction(app, pluginConfig),
+          3,
+        ),
+      );
     },
 
     getDefaultOptions,
@@ -146,13 +148,6 @@ export default function lux3dviewerPluginFeatureInfo(
       listeners.length = 0;
       runtime?.destroy();
       runtime = null;
-      claimed.forEach((layer) => {
-        if (layer.featureProvider instanceof LuxWmsFeatureProvider) {
-          layer.featureProvider.destroy();
-          layer.featureProvider = undefined;
-        }
-      });
-      claimed.clear();
       if (app) {
         if (ownedView) {
           app.featureInfo.remove(ownedView);

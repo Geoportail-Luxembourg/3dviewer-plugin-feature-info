@@ -14,10 +14,11 @@ export const LUX_FEATURE_INFO_VIEW_NAME = 'luxFeatureInfo';
 export const I18N_NAMESPACE = 'lux3dviewerPluginFeatureInfo';
 
 /**
- * Template the geoportail backend uses when a layer has no specific one, and
- * what the shared dispatcher falls back to for any name it does not know.
+ * Carries the per-feature envelope from the interaction to
+ * `LuxTemplateFeatureInfoView`. Lives here rather than next to its producer so
+ * the view does not import the interaction.
  */
-export const DEFAULT_TEMPLATE = 'default.html';
+export const luxContentSymbol = Symbol('luxFeatureInfoContent');
 
 /**
  * Minimal view of the auth plugin's public API. Only `userState` is read, and
@@ -40,28 +41,35 @@ export type PluginConfig = {
   /** URLs and role ids the feature info templates need. */
   templatesConfig: LuxTplConfig;
   /**
-   * Lux layer id to template filename, merged over the generated seed in
-   * `luxTemplates.ts`. Anything unmapped renders with {@link DEFAULT_TEMPLATE}.
-   * The mapping exists only in the backend's `lux_getfeature_definition` table,
-   * so it cannot be derived from the themes API or a WMS response.
+   * The geoportail's aggregated GetFeatureInfo endpoint, e.g.
+   * `https://map.geoportail.lu/getfeatureinfo`. One request covers every active
+   * layer, and the backend answers per *definition* — a layer with several rows
+   * in `lux_getfeature_definition` yields several entries, each with its own
+   * template. That is why this is not a standard per-layer WMS call.
    */
-  templates: Record<string, string>;
+  luxGetInfoUrl: string;
   /**
-   * Floor, in meters per pixel, for the resolution handed to the WMS
-   * GetFeatureInfo request. The server's hit tolerance is a few pixels, so the
-   * resolution is what sets it in ground units — and a tilted 3D camera reports
-   * sub-metre resolutions, which would make point layers unclickable. The
-   * default of 3 gives roughly the ±10 m the 2D portal searches.
+   * Half-width in metres of `box1`, which the backend intersects against
+   * geometries with no rings — points and lines (`ST_NRings(geom) = 0`). Those
+   * need a generous box to be clickable at all.
    */
-  minResolution: number;
+  bigBuffer: number;
   /**
-   * Whether the templates keep the server's attribute order (`true`) or sort
-   * alphabetically. The aggregated endpoint decided this per layer; a standard
-   * WMS response cannot say, so it is one setting for all layers.
+   * Half-width in metres of `box2`, used for ringed geometries, i.e. polygons
+   * (`ST_NRings(geom) > 0`). Small on purpose: a click inside a polygon already
+   * intersects it, and widening this starts returning the neighbours too.
+   *
+   * The 2D portal scales both with the map resolution (`20 *` and `1 *`), which
+   * a tilted 3D camera cannot supply meaningfully — it reports sub-metre values
+   * from a few hundred metres up. Fixed metres instead.
    */
-  ordered: boolean;
-  /** `FEATURE_COUNT` sent per layer. WMS servers default to 1. */
-  featureCount: number;
+  smallBuffer: number;
+  /**
+   * Credentials mode for the query. `include` is what lets the backend see the
+   * session and return role-specific definitions; it needs the endpoint to
+   * answer with a matching `Access-Control-Allow-Origin`.
+   */
+  credentials?: RequestCredentials;
 };
 
 export type PluginState = Record<never, never>;

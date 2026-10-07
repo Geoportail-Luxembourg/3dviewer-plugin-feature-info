@@ -1,8 +1,7 @@
 import { AbstractFeatureInfoView, WindowSlot } from '@vcmap/ui';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 import LuxFeatureInfoWindow from './LuxFeatureInfoWindow.vue';
-import { luxContentSymbol } from './luxWmsFeatureProvider.js';
-import { I18N_NAMESPACE } from './model.js';
+import { I18N_NAMESPACE, luxContentSymbol } from './model.js';
 
 /*
  * @vcmap/ui re-exports the class but not the types around it, so they are
@@ -23,9 +22,9 @@ type FeatureInfoComponent = ConstructorParameters<
  * Renders a lux GetFeatureInfo response with the shared geoportail templates.
  *
  * Unlike the built-in views this one does not render the feature's attributes
- * directly: the templates take a per-layer envelope, which `LuxWmsFeatureProvider`
+ * directly: the templates take a per-layer envelope, which `LuxAggregatedInteraction`
  * builds and leaves on the feature under {@link luxContentSymbol}. Everything
- * else is the framework's — the provider tags the feature with
+ * else is the framework's — the interaction tags the feature with
  * `featureInfoViewSymbol` so this view is selected without per-layer resolution,
  * and `featureInfo.selectFeature()` handles the window, the selection and the
  * toolbox session.

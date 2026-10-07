@@ -1,5 +1,4 @@
 import type { PluginConfig } from './model.js';
-import luxTemplates from './luxTemplates.js';
 
 /**
  * Production defaults, pointing at the deployed geoportail.
@@ -14,10 +13,11 @@ const GEOPORTAIL = 'https://map.geoportail.lu';
 export default function getDefaultOptions(): PluginConfig {
   return {
     luxLocalesUrl: `${GEOPORTAIL}/assets/locales`,
-    templates: luxTemplates,
-    minResolution: 3,
-    ordered: true,
-    featureCount: 50,
+    luxGetInfoUrl: `${GEOPORTAIL}/getfeatureinfo`,
+    // The hit boxes the 2D portal searches with, in metres.
+    bigBuffer: 10,
+    smallBuffer: 1,
+    credentials: 'include',
     templatesConfig: {
       casipoUrl: `${GEOPORTAIL}/casipo`,
       forageVirtuelUrl: `${GEOPORTAIL}/getRapportForageVirtuel`,

@@ -18,8 +18,7 @@
     "test": "vitest",
     "coverage": "vitest run --coverage",
     "type-check": "vue-tsc --noEmit",
-    "ensure-types": "vcmplugin ensure-types",
-    "harvest-templates": "node scripts/harvest-templates.mjs > src/luxTemplates.ts"
+    "ensure-types": "vcmplugin ensure-types"
   },
   "author": "author <email>",
   "license": "GPL-3.0",

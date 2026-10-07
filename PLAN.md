@@ -1,4 +1,4 @@
-# The feature info trigger — three designs, and why this one
+# The feature info trigger — four designs, and why this one
 
 **Status: implemented.** This is the working record of how the plugin arrived at standard
 per-layer WMS GetFeatureInfo, kept here so the reasoning travels with the code. The
@@ -17,6 +17,10 @@ Two designs preceded it, both replaced:
 The move to candidate C traded the stacked panel for VC Map's cluster list and the
 aggregated call for N standard ones, in exchange for the plugin no longer speaking the
 custom endpoint's protocol at all.
+
+> **Superseded by design 4 (October 2026).** Everything below describes the per-layer WMS
+> design and still explains why designs 1 and 2 were left. The route it argues _for_ was
+> itself replaced; see "Design 4" at the end of this file for what changed and why.
 
 ## Context
 
@@ -240,3 +244,77 @@ Consequences of the decisions above, all deliberate:
   3D building clicks, `fid` deep links, elevation profile.
 - `docs/plan-3dviewer-featureinfo-plugin.md` and `PLAN.md` both describe the aggregated
   provider and will need rewriting once this lands.
+
+## Design 4 — back to the aggregated endpoint
+
+The per-layer WMS design was correct about the mechanics and wrong about the endpoint. What
+settled it was reading the backend rather than measuring the symptoms.
+
+**`/getfeatureinfo` is a dispatcher.** For each layer, `get_info()` reads
+`lux_getfeature_definition` and takes one of three branches
+(`geoportailv3/geoportal/geoportailv3_geoportal/views/getfeatureinfo.py`):
+
+| branch | condition      | what it does                                                                 |
+| ------ | -------------- | ---------------------------------------------------------------------------- |
+| REST   | `rest_url` set | queries an ArcGIS REST service                                               |
+| SQL    | `query` set    | runs the definition's SQL against the geodata DB                             |
+| WMS    | neither        | `_ogc_getfeatureinfo()` — relays a standard WMS GetFeatureInfo _server-side_ |
+
+That third branch sends exactly what design 3 sent: `VERSION=1.1.1`, `STYLES=''`,
+`INFO_FORMAT=application/json`, `FEATURE_COUNT=50`, `SRS` defaulting to EPSG:2169, with the
+caller's `X/Y/WIDTH/HEIGHT/BBOX` passed through. So design 3 was not an approximation of the
+aggregated endpoint — it was one of its three branches, reimplemented client-side, and blind
+to the other two. The "~2% of layers 500 on a hit" finding and
+`docs/wms-getfeatureinfo-gaps.md` were measuring exactly that blindness.
+
+Where the WMS branch does apply, design 3 was faithful: of 60 layers with data, **58 had
+identical attribute key sets** on both paths.
+
+**Two things design 3 could not represent at all:**
+
+1. **Multiple definitions per layer.** `get_lux_feature_definition()` collects with `.all()`
+   and `get_info()` appends one result per row, so `layers=813` returns five entries with
+   two distinct templates, two of them carrying features. `src/luxTemplates.ts` was 1:1 by
+   construction and held `bus_wo_title.html` for 813, while the entries with data wanted
+   `default_table.html`. Widening it to `Record<string, string[]>` does not help: the split
+   is defined by each definition's own SQL, so nothing client-side can assign features to
+   definitions. Measured across 618 layers enumerated anonymously: 38 return more than one
+   entry, 2 (813, 817) more than one distinct template.
+2. **Role-dependent definitions**, which replace the anonymous rows wholesale — template,
+   query and attribute handling together.
+
+**The UI did not have to change.** VC Map's cluster list groups purely on
+`feature[vcsLayerName]`, a plain string the plugin sets, and
+`FeatureProviderInteraction.pipe()` skips its entire fan-out when `event.feature` is already
+set. So an interaction at chain index 3 can make one request and build the result itself,
+and the stock list renders it unchanged.
+
+**The shape that makes multi-definition layers free:** one VC Map feature per _response
+feature_, each carrying its own entry (`splitResponse` + `toSingleFeatureContent`). Rows are
+per feature already, so each renders with the template of the definition that produced it.
+There is no branch for the multi-definition case.
+
+Latency, measured for 1/3/10/30 layers: one aggregated request takes 438/508/1070/2093 ms
+against 645 ms/93 s/768/3135 ms for N parallel WMS calls — comparable at small N, better at
+30, and without the tail-latency exposure of needing all N to resolve.
+
+### What deviated from design 4 as planned
+
+- **`luxFeatureInfoJson.ts` was deleted rather than shrunk.** The restored
+  `postProcessResponse()` already annotates entries; the per-feature envelope is a two-line
+  spread in the interaction.
+- **Clearing the layers' feature providers turned out to be required**, which the plan did
+  not anticipate. Without it, every click the query answers nothing for falls through to
+  themesync's `text/html` provider and opens the 2D iframe instead of closing the panel.
+- **Features need an explicit id.** Not every layer returns a `fid` (813 returns `null`), and
+  bypassing `getProviderFeature()` loses its uuid fallback, leaving cluster rows titled
+  `undefined`.
+- **The box semantics are not coarse/fine.** `box1` is intersected against ring-less
+  geometries (points, lines) and `box2` against polygons. The 2D portal scales both with map
+  resolution (`20 *`, `1 *`); fixed metres are used here because a tilted 3D camera reports
+  sub-metre resolutions from hundreds of metres up.
+- **A clone-exemption was written and then removed.** A second click inside a selected
+  geometry appeared to issue no request, which looked like the scratch-layer clone being
+  re-picked. It was a flaw in the CDP harness (a synthetic click needs a preceding
+  `mouseMoved`). Measured afterwards: the clone is never picked, the empty style is enough,
+  and the exemption was dead code.
