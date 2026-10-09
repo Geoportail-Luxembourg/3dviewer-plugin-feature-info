@@ -1,4 +1,4 @@
-# The feature info trigger — four designs, and why this one
+# The feature info trigger — five designs, and why this one
 
 **Status: implemented.** This is the working record of how the plugin arrived at standard
 per-layer WMS GetFeatureInfo, kept here so the reasoning travels with the code. The
@@ -18,9 +18,11 @@ The move to candidate C traded the stacked panel for VC Map's cluster list and t
 aggregated call for N standard ones, in exchange for the plugin no longer speaking the
 custom endpoint's protocol at all.
 
-> **Superseded by design 4 (October 2026).** Everything below describes the per-layer WMS
-> design and still explains why designs 1 and 2 were left. The route it argues _for_ was
-> itself replaced; see "Design 4" at the end of this file for what changed and why.
+> **Superseded by design 4, then design 5 (October 2026).** Everything below describes the
+> per-layer WMS design and still explains why designs 1 and 2 were left. The route it argues
+> _for_ was itself replaced; see "Design 4" and "Design 5" at the end of this file for what
+> changed and why. Design 5 is what is implemented: design 2's provider mechanism with
+> design 4's output.
 
 ## Context
 
@@ -318,3 +320,74 @@ against 645 ms/93 s/768/3135 ms for N parallel WMS calls — comparable at small
   re-picked. It was a flaw in the CDP harness (a synthetic click needs a preceding
   `mouseMoved`). Measured afterwards: the clone is never picked, the empty style is enough,
   and the exemption was dead code.
+
+## Design 5 — the aggregating provider, returning one feature per response feature
+
+Design 4 put its trigger in a persistent interaction inserted at **index 3** of the event
+handler's chain, just before `FeatureProviderInteraction`. It worked, but it was off the
+framework's path in three ways:
+
+- the index depends on core's internal four-entry chain (`EventHandler` constructor) and
+  has no public way to be looked up — the chain is a private `_interactionChain`. Even
+  core's own docs disagree with the code about the default (`[index=3]` documented, `4`
+  implemented);
+- `addPersistentInteraction()` is documented for "non-interfering interactions", and this
+  one interferes by design: it sets `event.feature` so `FeatureProviderInteraction` skips
+  its fan-out. Nothing in `@vcmap/core`, `@vcmap/ui` or the showcase plugins passes an
+  index at all;
+- setting `event.feature` first also discarded every **other** layer's provider results
+  whenever lux returned anything.
+
+**Why design 2 was not a dead end.** It was left for its output — one envelope feature, to
+keep the 2D stacked panel — not for its mechanism. Nothing ties a provided feature to the
+layer whose provider returned it: the cluster grouping, the window title and
+`selectFeature()` read only `feature[vcsLayerName]`, a plain string. So one provider can
+return design 4's features, each naming its own lux layer, and the stock cluster list
+renders them exactly as before.
+
+**The helper layer.** `FeatureProviderInteraction` finds providers only through
+`event.map.layerCollection`, filtered to active, supported layers with a provider. There is
+no registry. The provider therefore needs a layer that is always active and independent of
+which lux layers are on:
+
+- on one lux layer it would come and go with that layer, and `WMSLayer.initialize()`
+  overwrites providers;
+- on every lux layer it would need per-click request coalescing to stay at one request;
+- on a base map it would couple to the deployment's config.
+
+So the plugin adds an empty `VectorLayer` (supported in Cesium, Oblique, OL and panorama;
+renders nothing), marked volatile so `app.getState()` and share links skip it, and in no
+content tree. VC Map's own feature info does the same for its highlight scratch layer.
+Themesync's `reloadThemes()` removes only its own module, so the helper layer survives it.
+
+**What moved, what did not.** The class became `LuxAggregatedFeatureProvider`
+(`git mv` from the interaction); `splitResponse`, `deriveRowTitle`,
+`toSingleFeatureContent`, the empty `Style`, the id fallback and the toolbox gate are
+unchanged — `FeatureProviderInteraction` is never gated, so the provider gates itself just
+as the interaction did. `getProviderFeature()` is still not used: it would stamp the helper
+layer's name over each feature's `vcsLayerName`. Clearing the lux layers' own providers is
+still required, for the same reason as in design 4. The request is unchanged: one
+aggregated `/getfeatureinfo` per click.
+
+**Unchanged limitation.** A 3D tileset click still vetoes the 2D query —
+`FeatureProviderInteraction` also does nothing once `event.feature` is set — so it is now a
+constraint again rather than a choice, as it was in design 2.
+
+### Verified
+
+Same harness as design 4 (CDP, `https://3d-staging.geoportail.lu`, layers 813, 262 and 152
+active): one request per click; the cluster list grouped by layer with both 813 definitions
+as rows, the second rendering `default_table.html`; a single parcel opening `parcels.html`
+directly with the `359_…` fid; a second click inside the selected parcel querying again; an
+empty click closing everything with no `featureInfo2d` iframe; zero requests with the tool
+off; the helper layer supported in Cesium and Oblique, and an Oblique click returning the
+clicked parcel.
+
+Two observations, neither caused by this change:
+
+- **The highlight did not show** in headless SwiftShader screenshots, although the feature
+  is on VC Map's scratch layer and registered as highlighted. Design 4 run side by side
+  behaved identically. Needs a look in a real browser.
+- **In the Oblique map the lux WMS layers report `isSupported() === false`** and are not
+  drawn, yet they are queried and answer, because `collectQueryableLayers()` checks only
+  `active`. Both designs do this.

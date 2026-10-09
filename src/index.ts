@@ -1,5 +1,7 @@
 import type { VcsPlugin, VcsUiApp, PluginConfigEditor } from '@vcmap/ui';
+import { markVolatile, VectorLayer } from '@vcmap/core';
 import type { Layer } from '@vcmap/core';
+import { getLogger } from '@vcsuite/logger';
 import { name, version, mapVersion } from '../package.json';
 import {
   I18N_NAMESPACE,
@@ -12,7 +14,7 @@ import getDefaultOptions from './defaultOptions.js';
 import { getLuxProjection } from './luxProjection.js';
 import { isLuxQueryLayer } from './luxQueryService.js';
 import LuxTemplateFeatureInfoView from './luxTemplateFeatureInfoView.js';
-import LuxAggregatedInteraction from './luxAggregatedInteraction.js';
+import LuxAggregatedFeatureProvider from './luxAggregatedFeatureProvider.js';
 import { createLuxTplRuntime } from './luxTplRuntime.js';
 import type { LuxTplRuntime } from './luxTplRuntime.js';
 import i18n from './i18n.js';
@@ -37,6 +39,7 @@ export default function lux3dviewerPluginFeatureInfo(
   let app: VcsUiApp | null = null;
   let runtime: LuxTplRuntime | null = null;
   let ownedView: LuxTemplateFeatureInfoView | null = null;
+  let providerLayer: VectorLayer | null = null;
   const listeners: (() => void)[] = [];
 
   /**
@@ -47,9 +50,9 @@ export default function lux3dviewerPluginFeatureInfo(
    * The feature provider themesync configures (`featureInfo:
    * { responseType: 'text/html' }`) fabricates a placeholder feature per click
    * *without any request*, which is how the `featureInfo2d` iframe gets its
-   * position. `FeatureProviderInteraction` runs right after this plugin's
-   * interaction, so leaving it in place means every click the aggregated query
-   * answers nothing for — a click on a street, say — opens that iframe instead
+   * position. `FeatureProviderInteraction` asks it alongside this plugin's
+   * aggregated provider, so leaving it in place means every click the aggregated
+   * query answers nothing for — a click on a street, say — opens that iframe instead
    * of closing the panel. Clearing it has to be repeated, because
    * `WMSLayer.initialize()` rebuilds the configured provider on first activation
    * and fires no event of its own; `stateChanged` is the hook that covers it.
@@ -107,7 +110,7 @@ export default function lux3dviewerPluginFeatureInfo(
       app = vcsUiApp;
 
       // A module config may define its own instance; only fall back to a
-      // default one when it did not. The interaction resolves the view by name,
+      // default one when it did not. The provider resolves the view by name,
       // so it has to exist before the first click.
       if (!app.featureInfo.hasKey(LUX_FEATURE_INFO_VIEW_NAME)) {
         ownedView = new LuxTemplateFeatureInfoView({
@@ -118,15 +121,20 @@ export default function lux3dviewerPluginFeatureInfo(
 
       [...app.layers].forEach(claimLayer);
 
-      // Index 3 is immediately before VC Map's own `FeatureProviderInteraction`
-      // in the base chain, which skips its per-layer fan-out once `event.feature`
-      // is set. `addPersistentInteraction` defaults to 4, i.e. after it.
-      listeners.push(
-        app.maps.eventHandler.addPersistentInteraction(
-          new LuxAggregatedInteraction(app, pluginConfig),
-          3,
-        ),
+      // VC Map finds feature providers only through active layers, and this one
+      // answers for every lux layer at once, so it gets a layer of its own: empty,
+      // always active, supported in every map type. Volatile keeps it out of the
+      // app state and share links; it is in no content tree, so it is invisible.
+      providerLayer = new VectorLayer({ name: `${name}:provider` });
+      markVolatile(providerLayer);
+      providerLayer.featureProvider = new LuxAggregatedFeatureProvider(
+        app,
+        pluginConfig,
       );
+      app.layers.add(providerLayer);
+      providerLayer.activate().catch((e: unknown) => {
+        getLogger(name).error(String(e));
+      });
     },
 
     getDefaultOptions,
@@ -151,6 +159,10 @@ export default function lux3dviewerPluginFeatureInfo(
       runtime?.destroy();
       runtime = null;
       if (app) {
+        if (providerLayer) {
+          app.layers.remove(providerLayer);
+          providerLayer.destroy();
+        }
         if (ownedView) {
           app.featureInfo.remove(ownedView);
           ownedView.destroy();
@@ -161,6 +173,7 @@ export default function lux3dviewerPluginFeatureInfo(
         );
       }
       ownedView = null;
+      providerLayer = null;
       app = null;
     },
 

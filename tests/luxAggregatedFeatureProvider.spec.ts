@@ -4,7 +4,7 @@ import {
   deriveRowTitle,
   splitResponse,
   toSingleFeatureContent,
-} from '../src/luxAggregatedInteraction.js';
+} from '../src/luxAggregatedFeatureProvider.js';
 import { postProcessResponse } from '../src/luxQueryService.js';
 import type { LuxQueryLayer } from '../src/luxQueryService.js';
 import mixed from './fixtures/getfeatureinfo-communes-bus-cadastre.json';

@@ -12,11 +12,16 @@ components — the same templates the 2D portal uses.
 
 **One aggregated request per click; VC Map renders the result.**
 
-The plugin adds a single interaction to the map's event chain, immediately before VC Map's
-own `FeatureProviderInteraction`. On click it asks the geoportail's `/getfeatureinfo` about
-every active queryable lux layer at once, then hands VC Map one feature per returned
-feature. From there the framework does the rest: `featureInfo.selectFeature()` opens the
-window through the registered `LuxTemplateFeatureInfoView`.
+The plugin registers one feature provider, `LuxAggregatedFeatureProvider`, that VC Map's own
+`FeatureProviderInteraction` asks on every click. It asks the geoportail's
+`/getfeatureinfo` about every active queryable lux layer at once and returns one feature per
+returned feature. From there the framework does the rest: `featureInfo.selectFeature()`
+opens the window through the registered `LuxTemplateFeatureInfoView`.
+
+VC Map finds feature providers only through active layers, and this one answers for all lux
+layers at once, so it sits on a layer of its own: an empty `VectorLayer`, always active,
+marked volatile so it never appears in the app state or share links, and in no content
+tree.
 
 **Why not a standard per-layer WMS GetFeatureInfo?** Because `/getfeatureinfo` is a
 dispatcher, not a convenience wrapper. For each layer the backend reads
@@ -42,13 +47,13 @@ grouped by layer, one row per feature; selecting a row renders that feature's ow
 which is what makes multi-definition layers work without a special case. A single feature
 opens its panel directly.
 
-Four things in the interaction that are contract, not refinement:
+Four things in the provider that are contract, not refinement:
 
-- **It gates on the feature info toolbox toggle.** The persistent interaction chain is piped
-  on every click — panning, drawing, tool off — and each pass would otherwise be a request.
-- **It defers to whatever was already picked.** A 3D tileset or vector feature belongs to
-  whoever owns it, so the interaction returns untouched. This is also why clicking a LOD2
-  building does not query the 2D layers underneath.
+- **It gates on the feature info toolbox toggle.** `FeatureProviderInteraction` asks every
+  provider on every click — panning, drawing, tool off — and each call would otherwise be a
+  request.
+- **Each feature names its own lux layer**, not the helper layer: the cluster list groups on
+  `vcsLayerName` and `selectFeature()` resolves the layer through it.
 - **It gives every feature an id and a row title.** Not all layers return a `fid` (813
   returns `null`), and a feature without an id leaves its cluster row titled `undefined`.
   The title is derived too: VC Map titles rows from one configured attribute plus a
@@ -59,6 +64,10 @@ Four things in the interaction that are contract, not refinement:
   scratch layer forcing `olcs_allowPicking: true`; with a visible style that clone is picked
   on the next click and the selected geometry becomes a dead zone. An empty style keeps the
   highlight while leaving the clone unpickable.
+
+VC Map asks no provider when something was already picked, so a 3D tileset or vector
+feature keeps its own click. This is also why clicking a LOD2 building does not query the
+2D layers underneath.
 
 The plugin also clears the feature provider themesync configures on those layers. That
 provider fabricates a placeholder feature per click without any request — it is how the 2D
@@ -99,7 +108,7 @@ reference it.
 | `credentials`     | `include`                                  | Credentials mode for the query. `include` is what lets the backend see the session and return role-specific definitions.                |
 
 The plugin takes the lux layers over by itself: it clears the `text/html` feature provider
-themesync configured and answers for those layers from its own interaction. Nothing has to
+themesync configured and answers for those layers from its own provider. Nothing has to
 be configured on the themesync side, and dropping this plugin from the `plugins` array
 restores the previous iframe behaviour with no other change.
 
@@ -119,14 +128,15 @@ sub-metre resolutions from hundreds of metres up, so these are fixed metres inst
 
 `tests/fixtures/getfeatureinfo-*.json` are real captured responses;
 `tests/luxQueryResponse.spec.ts` pins the post-processing and
-`tests/luxAggregatedInteraction.spec.ts` the fan-out to one feature per response feature,
+`tests/luxAggregatedFeatureProvider.spec.ts` the fan-out to one feature per response feature,
 including the multi-definition case.
 
 ## Not in v1
 
 - Highlighting beyond VC Map's own. The framework clones provided features onto a scratch
-  layer and highlights them, which this plugin relies on; a plugin-owned highlight layer
-  would be needed for anything more (styling per layer, keeping it after the window closes).
+  layer and highlights them, which this plugin relies on; anything more (styling per layer,
+  keeping it after the window closes) needs a plugin-owned layer, which the provider's
+  helper layer could be.
 - Layers whose backend `template` is a remote URL (`getpoitemplate?layer=…`,
   `remote_template: true`). The response flags them, but the templates package cannot render
   one, so they fall back to the default template.
@@ -135,10 +145,9 @@ including the multi-definition case.
   templates only emit `export` from that component, so a handler here would be unreachable.
 - `fid` permalink deep links. The endpoint supports `?fid=`, and every feature keeps its
   composite `fid`, so this is now a small addition rather than a structural gap.
-- Routing 3D building clicks through the lux templates instead of the balloon. The
-  interaction defers to whatever was already picked; since it runs _before_
-  `FeatureProviderInteraction`, this is a choice that can be revisited rather than a
-  constraint.
+- Routing 3D building clicks through the lux templates instead of the balloon.
+  `FeatureProviderInteraction` asks no provider once something was picked, so this needs a
+  mechanism of its own.
 - `isThemeAvailable` is stubbed to `false`, so templates that gate sections on a restricted
   theme (the professional parcel sections, for instance) keep them hidden even for a user
   who has them.

@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-The trigger has been through four designs; the current one is a single aggregated
-`/getfeatureinfo` request per click (see "What this plugin does"). `@geoportallux/feature-info-templates` is
+The trigger has been through five designs; the current one is a single aggregated
+`/getfeatureinfo` request per click, made by a feature provider on a hidden helper layer
+(see "What this plugin does"). `@geoportallux/feature-info-templates` is
 consumed through a `file:` dependency on the sibling `luxembourg-geoportail` checkout,
 because that package is not published yet (Plan A phase 6). `.npmrc` sets
 `install-links=true` so npm copies rather than symlinks it — a symlink whose realpath is
@@ -88,10 +89,12 @@ Reproduces the geoportail's GetFeatureInfo inside the VC Map 3D viewer, renderin
 `@geoportallux/feature-info-templates`.
 
 **In one line: one aggregated request per click to the geoportail's own
-`/getfeatureinfo`, fanned out to one VC Map feature per response feature.** Three earlier
+`/getfeatureinfo`, fanned out to one VC Map feature per response feature, returned by a
+feature provider that VC Map's own `FeatureProviderInteraction` asks.** Four earlier
 designs are recorded in `PLAN.md` — a custom persistent interaction, an aggregating feature
-provider, then standard per-layer WMS. Read it before changing the trigger; each was
-replaced for reasons that are easy to rediscover the hard way.
+provider returning one envelope feature, standard per-layer WMS, then a custom interaction
+at chain index 3. Read it before changing the trigger; each was replaced for reasons that
+are easy to rediscover the hard way.
 
 **Why aggregated and not per-layer WMS.** `/getfeatureinfo` is a _dispatcher_. Per layer it
 reads `lux_getfeature_definition` and picks one of three branches
@@ -118,15 +121,17 @@ The response is already the envelope the templates want: `template`, `remote_tem
 
 The pieces, one module each:
 
-- **`luxAggregatedInteraction.ts`** — the whole trigger. An `AbstractInteraction` on
-  `EventType.CLICK`, registered at **index 3** of the event handler's chain, i.e.
-  immediately before `FeatureProviderInteraction`, which skips its own per-layer fan-out
-  once `event.feature` is set. Four behaviours are contract, not polish:
-  1. **gates on the `featureInfo` toolbox toggle** — the persistent chain is piped on every
-     click, and each pass would otherwise be a real request;
-  2. **returns early when something was already picked** — a 3D tileset or vector feature
-     belongs to whoever owns it (this is also why a tileset click still vetoes the 2D
-     query, see "Still open");
+- **`luxAggregatedFeatureProvider.ts`** — the whole trigger. An
+  `AbstractFeatureProvider` whose `getFeaturesByCoordinate()` makes the one request and
+  returns the features; `FeatureProviderInteraction` turns one into a panel and several
+  into the cluster list, merged with any other layer's provider results. Four behaviours
+  are contract, not polish:
+  1. **gates on the `featureInfo` toolbox toggle** — `FeatureProviderInteraction` is never
+     deactivated and asks every provider on every click, so each call would otherwise be a
+     real request;
+  2. **each feature names its own lux layer in `vcsLayerName`**, not the helper layer — the
+     cluster list groups on it and `selectFeature()` resolves the layer through it. This is
+     why `getProviderFeature()` is not used: it would stamp the helper layer's name;
   3. **one feature per response feature, carrying its own entry** — `splitResponse()` plus
      `toSingleFeatureContent()`. This is what makes multi-definition layers need no branch
      at all, and it is why each cluster row renders with its own template;
@@ -136,10 +141,20 @@ The pieces, one module each:
      still queries (measured both ways).
 
   It also fills two gaps `AbstractFeatureProvider.getProviderFeature()` would otherwise
-  cover, since this interaction does not go through it: an **`id`** on every feature (not
+  cover, since this provider does not go through it: an **`id`** on every feature (not
   all layers return a `fid` — 813 answers `fid: null` — and a feature without an id leaves
   its cluster row titled `undefined`), and the **`luxRowTitle`** property the cluster list
   reads (see "Multiple features means a cluster list").
+
+  It lives on a **helper layer** `index.ts` adds: an empty `VectorLayer` named
+  `<package>:provider`, always active, `markVolatile()` so `app.getState()` and share links
+  skip it, in no content tree. It exists because `FeatureProviderInteraction` finds
+  providers only through active layers in the map's layer collection — there is no
+  registry — and this provider answers for all lux layers at once. `VectorLayer` supports
+  Cesium, Oblique, OL and panorama maps; VC Map's own feature info uses the same pattern for
+  its highlight scratch layer. The old "defer to whatever was picked" rule is now VC Map's:
+  once a tileset or vector feature is on the event, no provider is asked (see "Still
+  open").
 
 - **`luxQueryService.ts`** — request building and the response post-processing, restored
   from the aggregated design. `buildPositionParams()` encodes the server's contract: boxes
@@ -186,9 +201,9 @@ sets `properties.clusterFeatureTitleProperty` to the synthetic `luxRowTitle`.
 Clearing is not housekeeping. themesync configures `featureInfo:
 { responseType: 'text/html' }` on those layers, which builds a provider that fabricates a
 placeholder feature per click **without any request** — that is how the `featureInfo2d`
-iframe gets its position. `FeatureProviderInteraction` runs right after this plugin's
-interaction, so leaving that provider in place means every click the aggregated query
-answers nothing for — a click on a street, say — opens the 2D iframe instead of closing the
+iframe gets its position. `FeatureProviderInteraction` asks it alongside this plugin's
+provider, so leaving it in place means every click the aggregated query answers nothing
+for — a click on a street, say — opens the 2D iframe instead of closing the
 panel. Measured during implementation, and not obvious from the code.
 
 It has one trap: `WMSLayer.initialize()` builds the configured provider on first activation
@@ -286,7 +301,11 @@ change). Each of these broke at some point during implementation:
 - a click where no layer has data leaves **no window at all** — in particular the 2D
   `featureInfo2d` iframe does not open, which needs the layers' own providers cleared;
 - a second click inside an already-selected geometry still queries — this needs the empty
-  style on provided features, and the highlight still renders.
+  style on provided features;
+- the helper layer is active and supported in Cesium and Oblique, and an Oblique click
+  returns the clicked parcel.
+
+All of the above re-run after the move from the index-3 interaction to the provider.
 
 Measured while choosing the trigger: of 60 layers with data, 58 had identical attribute keys
 via the aggregated endpoint and via direct WMS. Latency for one aggregated request against
@@ -296,11 +315,16 @@ slow layer creates when N requests must all resolve.
 
 Still open:
 
-- **A 3D tileset click vetoes the 2D query.** The interaction returns early when something
-  was already picked, and LOD2 buildings are on by default in the deployed viewer, so over a
-  building no 2D lux layer is queried. Unchanged from the previous designs — but now
-  _reachable_: running before `FeatureProviderInteraction` means the early return is a
-  choice, not a constraint.
+- **A 3D tileset click vetoes the 2D query.** `FeatureProviderInteraction` asks no provider
+  once something was picked, and LOD2 buildings are on by default in the deployed viewer,
+  so over a building no 2D lux layer is queried. Changing that needs a mechanism outside
+  the provider.
+- **The highlight was not visible** in headless SwiftShader screenshots, although the
+  selected feature is on VC Map's scratch layer and registered as highlighted. The index-3
+  interaction behaved identically side by side. Check in a real browser.
+- **Unsupported layers are queried.** In the Oblique map the lux WMS layers report
+  `isSupported() === false` and are not drawn, yet `collectQueryableLayers()` checks only
+  `active`, so they are queried and answer. A product decision, one line either way.
 - **Whether the aggregated endpoint gets credentials** from the viewer. Role-specific
   definitions and protected layers depend on `credentials: 'include'` reaching
   `map.geoportail.lu`; the config sends it, but it has not been verified with a logged-in

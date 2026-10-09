@@ -1,18 +1,13 @@
 import { Feature } from 'ol';
-import Point from 'ol/geom/Point.js';
 import Style from 'ol/style/Style.js';
 import GeoJSON from 'ol/format/GeoJSON.js';
+import type { Coordinate } from 'ol/coordinate.js';
 import {
-  AbstractInteraction,
-  EventType,
-  isProvidedClusterFeature,
+  AbstractFeatureProvider,
   isProvidedFeature,
   mercatorProjection,
-  ModificationKeyType,
-  PointerKeyType,
   vcsLayerName,
 } from '@vcmap/core';
-import type { InteractionEvent } from '@vcmap/core';
 import { getLogger } from '@vcsuite/logger';
 import { featureInfoViewSymbol, NotificationType } from '@vcmap/ui';
 import type { VcsUiApp } from '@vcmap/ui';
@@ -46,7 +41,7 @@ export type LuxResponseFeature = {
    * feature without an id leaves its cluster row titled `undefined`, because the
    * title falls back through `attributes[clusterFeatureTitleProperty]`,
    * `title`, `name` to exactly that id. `AbstractFeatureProvider.getProviderFeature()`
-   * covers this with a uuid; this interaction does not go through it, so the
+   * covers this with a uuid; this provider does not go through it, so the
    * fallback is here instead, and is positional rather than random so a row keeps
    * its identity across re-renders.
    */
@@ -140,29 +135,38 @@ export function toSingleFeatureContent(
  * Queries the geoportail's aggregated GetFeatureInfo on click and hands VC Map
  * features it can render.
  *
- * Sits at index 3 of the event handler's chain, i.e. immediately *before*
- * `FeatureProviderInteraction`, which skips its own per-layer fan-out as soon as
- * `event.feature` is set. One request per click covers every active lux layer and
+ * Lives on a hidden helper layer the plugin owns, not on the lux layers: VC Map
+ * finds providers only through active layers, and this one has to answer for
+ * all of them at once. One request per click covers every active lux layer and
  * reaches all three backend branches (ArcGIS REST, SQL and the server-side WMS
  * relay), where a per-layer WMS call only ever reaches the last of them.
+ *
+ * Every returned feature names its *lux* layer in `vcsLayerName`, not the helper
+ * layer — that is all VC Map's cluster list groups on, and what
+ * `selectFeature()` resolves. So `getProviderFeature()` is not used: it would
+ * stamp the helper layer's name over it.
  */
-class LuxAggregatedInteraction extends AbstractInteraction {
+class LuxAggregatedFeatureProvider extends AbstractFeatureProvider {
+  static get className(): string {
+    return 'LuxAggregatedFeatureProvider';
+  }
+
   private _app: VcsUiApp;
 
   private _config: PluginConfig;
 
   constructor(app: VcsUiApp, config: PluginConfig) {
-    super(EventType.CLICK, ModificationKeyType.ALL, PointerKeyType.ALL);
+    super({});
     this._app = app;
     this._config = config;
-    this.setActive();
   }
 
   /**
    * Only query while VC Map's feature info tool is toggled on.
    *
-   * This interaction is in the persistent chain and is piped on every click —
-   * panning, drawing, tool off — and each pass would be a real HTTP request.
+   * `FeatureProviderInteraction` sits in the persistent chain and asks every
+   * provider on every click — panning, drawing, tool off — and each call here
+   * would be a real HTTP request.
    */
   private _isToolActive(): boolean {
     if (!this._app.toolboxManager.has(FEATURE_INFO_TOOL_ID)) {
@@ -179,11 +183,11 @@ class LuxAggregatedInteraction extends AbstractInteraction {
    *
    * The lux attributes become the feature's own properties because the cluster
    * list titles rows from `attributes[clusterFeatureTitleProperty]`, which the
-   * plugin points at `label`. The geometry arrives in EPSG:2169 and is reprojected
-   * for the map. The empty style matters: `selectFeature()` clones a provided
-   * feature onto its scratch layer forcing `olcs_allowPicking`, and a *visible*
-   * clone is then picked on the next click, which makes the whole chain skip
-   * straight past this interaction.
+   * plugin points at {@link ROW_TITLE_PROPERTY}. The geometry arrives in
+   * EPSG:2169 and is reprojected for the map. The empty style matters:
+   * `selectFeature()` clones a provided feature onto its scratch layer forcing
+   * `olcs_allowPicking`, and a *visible* clone is then picked on the next click,
+   * which makes `FeatureProviderInteraction` skip every provider.
    */
   private _toOlFeature(item: LuxResponseFeature): Feature {
     const attributes = (item.feature.attributes ?? {}) as Record<
@@ -217,17 +221,9 @@ class LuxAggregatedInteraction extends AbstractInteraction {
     return feature;
   }
 
-  async pipe(event: InteractionEvent): Promise<InteractionEvent> {
-    // Something was picked already — a 3D tileset, a vector layer. That click
-    // belongs to whoever owns the feature, exactly as before this change.
-    //
-    // The highlight this plugin's own selection leaves behind is not among them:
-    // `selectFeature()` clones the feature onto an internal scratch layer and
-    // forces `olcs_allowPicking: true` on the clone, but the empty style below
-    // keeps it unpickable, so a second click inside the same geometry still
-    // reaches this interaction (measured).
-    if (event.feature || !this._isToolActive() || !event.position) {
-      return event;
+  async getFeaturesByCoordinate(coordinate: Coordinate): Promise<Feature[]> {
+    if (!this._isToolActive()) {
+      return [];
     }
 
     const mapElement = this._app.maps.activeMap?.mapElement;
@@ -239,37 +235,25 @@ class LuxAggregatedInteraction extends AbstractInteraction {
       content = await queryLuxFeatureInfoAtPosition(
         this._app,
         this._config,
-        event.position,
+        coordinate,
       );
     } catch (e) {
       this._app.notifier.add({
         message: `${I18N_NAMESPACE}.queryFailed`,
         type: NotificationType.ERROR,
       });
-      getLogger('LuxAggregatedInteraction').error(String(e));
+      getLogger('LuxAggregatedFeatureProvider').error(String(e));
     } finally {
       if (mapElement) {
         mapElement.style.cursor = '';
       }
     }
 
-    const features = splitResponse(content).map((item) =>
-      this._toOlFeature(item),
-    );
-    if (features.length === 1) {
-      [event.feature] = features;
-    } else if (features.length > 1) {
-      // Same shape FeatureProviderInteraction builds, so VC Map opens its own
-      // cluster list: searchable, grouped by layer, one row per feature.
-      const cluster = new Feature({ features });
-      const tagged = cluster as unknown as Record<symbol, unknown>;
-      tagged[isProvidedFeature] = true;
-      tagged[isProvidedClusterFeature] = true;
-      cluster.setGeometry(new Point(event.position));
-      event.feature = cluster;
-    }
-    return event;
+    // One or several, `FeatureProviderInteraction` does the rest: a single
+    // feature opens its panel, two or more — merged with whatever other layers'
+    // providers returned — become VC Map's cluster list.
+    return splitResponse(content).map((item) => this._toOlFeature(item));
   }
 }
 
-export default LuxAggregatedInteraction;
+export default LuxAggregatedFeatureProvider;
