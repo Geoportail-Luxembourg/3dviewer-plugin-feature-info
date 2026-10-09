@@ -145,7 +145,7 @@ export default function plugin(
     toJSON(): Partial<PluginConfig> {
       return { ...config };
     },
-    // ponytail: lux layers keep no provider after destroy, the iframe fallback returns on reload
+    // Lux layers get no provider back on destroy; the iframe fallback returns on reload.
     destroy(): void {
       listeners.splice(0).forEach((remove) => {
         remove();

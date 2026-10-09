@@ -77,7 +77,7 @@ export function rowTitle(
 
 // Mirrors the 2D client: fixed metre boxes in 2169 (box1 points/lines, box2 polygons)
 // plus a synthetic viewport centred on the click for the backend's WMS relay.
-// ponytail: fixed 10 m / 1 m boxes, make them config if a deployment needs other values
+// Box sizes are fixed; make them config if a deployment needs other values.
 function buildParams(
   map: VcsMap,
   layers: string,
