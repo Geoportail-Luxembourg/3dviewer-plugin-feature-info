@@ -103,16 +103,15 @@ export default function plugin(
         context: {
           config: options.templatesConfig,
           user: computed(() => {
-            const auth = app?.plugins.getByKey(
+            const auth = vcsUiApp.plugins.getByKey(
               '@geoportallux/lux-3dviewer-plugin-auth',
             ) as AuthPlugin | undefined;
             const user = auth?.userState?.user;
             return user ? { mail: user.mail, roleId: user.role_id } : null;
           }),
           notify: (message, type = 'info'): void => {
-            app?.notifier.add({ message, type });
+            vcsUiApp.notifier.add({ message, type });
           },
-          isThemeAvailable: (): boolean => false,
         },
         i18n: createLuxTplI18n(i18next),
       });
@@ -154,9 +153,6 @@ export default function plugin(
         app?.layers.remove(helperLayer);
         helperLayer.destroy();
       }
-      helperLayer = undefined;
-      view = undefined;
-      app = undefined;
     },
     i18n: {
       en: {

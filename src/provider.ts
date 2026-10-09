@@ -85,8 +85,7 @@ function buildParams(
 ): Record<string, string> {
   const [x, y] = Projection.transform(lux, mercatorProjection, position);
   const box = (b: number): string => [x - b, y + b, x + b, y - b].join();
-  const w = map.mapElement.offsetWidth || 512;
-  const h = map.mapElement.offsetHeight || 512;
+  const { offsetWidth: w, offsetHeight: h } = map.mapElement;
   const cx = Math.round(w / 2);
   const cy = Math.round(h / 2);
   const res = map.getCurrentResolution(position) || 1;
