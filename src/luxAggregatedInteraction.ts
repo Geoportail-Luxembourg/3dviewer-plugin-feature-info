@@ -26,6 +26,7 @@ import {
   I18N_NAMESPACE,
   LUX_FEATURE_INFO_VIEW_NAME,
   luxContentSymbol,
+  ROW_TITLE_PROPERTY,
 } from './model.js';
 import type { PluginConfig } from './model.js';
 
@@ -86,6 +87,40 @@ export function splitResponse(
     });
   });
   return items;
+}
+
+/**
+ * Attribute names that carry a human-readable title, best first, matched
+ * case-insensitively.
+ *
+ * `label` is first because that is what most lux layers compose and what the
+ * cluster rows showed before this existed. The rest only has to cover what VC
+ * Map's own fallback misses — it checks `title` and `name` exactly, so layer 813's
+ * `Name` never matched.
+ */
+const TITLE_ATTRIBUTES = ['label', 'name', 'title'];
+
+/**
+ * Pick a row title out of a feature's attributes.
+ *
+ * Returns undefined when nothing usable is there, which leaves the row titled by
+ * the feature id — the same degradation as before.
+ */
+export function deriveRowTitle(
+  attributes: Record<string, unknown>,
+): string | undefined {
+  const keys = Object.keys(attributes);
+  for (const candidate of TITLE_ATTRIBUTES) {
+    const key = keys.find((k) => k.toLowerCase() === candidate);
+    const value = key !== undefined ? attributes[key] : undefined;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value).trim();
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -155,7 +190,11 @@ class LuxAggregatedInteraction extends AbstractInteraction {
       string,
       unknown
     >;
-    const feature = new Feature({ ...attributes });
+    const rowTitle = deriveRowTitle(attributes);
+    const feature = new Feature({
+      ...attributes,
+      ...(rowTitle !== undefined && { [ROW_TITLE_PROPERTY]: rowTitle }),
+    });
     if (item.feature.geometry) {
       feature.setGeometry(
         new GeoJSON().readGeometry(item.feature.geometry, {

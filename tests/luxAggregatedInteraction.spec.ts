@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 import {
+  deriveRowTitle,
   splitResponse,
   toSingleFeatureContent,
 } from '../src/luxAggregatedInteraction.js';
@@ -73,6 +74,45 @@ describe('aggregated response fan-out', () => {
       const empty = multiResponse.filter((e) => e.features.length === 0);
       expect(empty.length).toBeGreaterThan(0);
       expect(splitResponse(empty)).toHaveLength(0);
+    });
+  });
+
+  describe('deriveRowTitle', () => {
+    it('matches case-insensitively, which is what VC Map cannot do', () => {
+      // 813's attributes are `Line` and `Name`. VC Map's own fallback checks
+      // `title` and `name` exactly, so capital `Name` left rows titled by id.
+      const content = postProcessResponse(multiResponse, busLayers);
+      splitResponse(content).forEach((item) => {
+        const attributes = item.feature.attributes as Record<string, unknown>;
+        expect(Object.keys(attributes)).toContain('Name');
+        expect(deriveRowTitle(attributes)).toBe(attributes.Name);
+      });
+    });
+
+    it('prefers label, so layers that compose one keep it', () => {
+      const content = postProcessResponse(mixedResponse, mixedLayers);
+      const parcel = splitResponse(content).find(
+        (i) => i.layerName === 'cadastre',
+      );
+      const attributes = parcel!.feature.attributes as Record<string, unknown>;
+      expect(attributes.label).toBeTruthy();
+      expect(deriveRowTitle(attributes)).toBe(attributes.label);
+    });
+
+    it('falls through to undefined, leaving the row titled by its id', () => {
+      expect(deriveRowTitle({})).toBeUndefined();
+      expect(deriveRowTitle({ Line: 'D07' })).toBeUndefined();
+      expect(deriveRowTitle({ label: '   ' })).toBeUndefined();
+      expect(deriveRowTitle({ label: { nested: true } })).toBeUndefined();
+    });
+
+    it('takes numbers, and trims', () => {
+      expect(deriveRowTitle({ Label: 42 })).toBe('42');
+      expect(deriveRowTitle({ TITLE: '  spaced  ' })).toBe('spaced');
+    });
+
+    it('skips an empty higher-priority key for a usable lower one', () => {
+      expect(deriveRowTitle({ label: '', Name: 'bus 19' })).toBe('bus 19');
     });
   });
 

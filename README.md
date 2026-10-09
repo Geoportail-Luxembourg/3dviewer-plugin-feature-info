@@ -49,8 +49,12 @@ Four things in the interaction that are contract, not refinement:
 - **It defers to whatever was already picked.** A 3D tileset or vector feature belongs to
   whoever owns it, so the interaction returns untouched. This is also why clicking a LOD2
   building does not query the 2D layers underneath.
-- **It gives every feature an id.** Not all layers return a `fid` (813 returns `null`), and
-  a feature without an id leaves its cluster row titled `undefined`.
+- **It gives every feature an id and a row title.** Not all layers return a `fid` (813
+  returns `null`), and a feature without an id leaves its cluster row titled `undefined`.
+  The title is derived too: VC Map titles rows from one configured attribute plus a
+  case-sensitive `title`/`name`, and lux layers disagree on the naming — most compose a
+  `label`, 813 carries `Name` — so the plugin writes a `luxRowTitle` attribute instead,
+  taking `label`, `name` or `title` case-insensitively.
 - **It renders nothing.** `selectFeature()` clones a provided feature onto its internal
   scratch layer forcing `olcs_allowPicking: true`; with a visible style that clone is picked
   on the next click and the selected geometry becomes a dead zone. An empty style keeps the

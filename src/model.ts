@@ -21,6 +21,19 @@ export const I18N_NAMESPACE = 'lux3dviewerPluginFeatureInfo';
 export const luxContentSymbol = Symbol('luxFeatureInfoContent');
 
 /**
+ * Feature property the cluster list titles its rows from, and which
+ * `claimLayer()` points `clusterFeatureTitleProperty` at.
+ *
+ * Synthetic: VC Map resolves a row title as `attributes[clusterFeatureTitleProperty]
+ * || attributes.title || attributes.name || feature.getId()`, a single configured
+ * key plus two hard-coded, case-sensitive ones. Lux layers do not agree on a
+ * naming — most carry a composed `label`, 813 carries `Name` — so the interaction
+ * derives one value into this key instead, rather than overwriting a real
+ * attribute or picking a property per layer.
+ */
+export const ROW_TITLE_PROPERTY = 'luxRowTitle';
+
+/**
  * Minimal view of the auth plugin's public API. Only `userState` is read, and
  * only when that plugin happens to be loaded.
  */

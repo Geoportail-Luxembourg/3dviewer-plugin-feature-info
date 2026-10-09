@@ -4,6 +4,7 @@ import { name, version, mapVersion } from '../package.json';
 import {
   I18N_NAMESPACE,
   LUX_FEATURE_INFO_VIEW_NAME,
+  ROW_TITLE_PROPERTY,
   type PluginConfig,
   type PluginState,
 } from './model.js';
@@ -53,9 +54,10 @@ export default function lux3dviewerPluginFeatureInfo(
    * `WMSLayer.initialize()` rebuilds the configured provider on first activation
    * and fires no event of its own; `stateChanged` is the hook that covers it.
    *
-   * `clusterFeatureTitleProperty` titles the cluster rows: the fallback chain is
-   * `attributes[prop]`, `title`, `name`, then the feature id, and lux features
-   * carry a composed `label`.
+   * `clusterFeatureTitleProperty` titles the cluster rows. It points at
+   * {@link ROW_TITLE_PROPERTY}, a value the interaction derives per feature,
+   * because the chain VC Map offers — `attributes[prop]`, `title`, `name`, the
+   * feature id — takes a single configured key and lux layers do not agree on one.
    */
   function claimLayer(layer: Layer): void {
     if (!isLuxQueryLayer(layer)) {
@@ -65,7 +67,7 @@ export default function lux3dviewerPluginFeatureInfo(
       layer.featureProvider.destroy();
       layer.featureProvider = undefined;
     }
-    layer.properties.clusterFeatureTitleProperty = 'label';
+    layer.properties.clusterFeatureTitleProperty = ROW_TITLE_PROPERTY;
   }
 
   return {

@@ -135,11 +135,11 @@ The pieces, one module each:
      but with the empty style it is not picked, so a second click inside the same geometry
      still queries (measured both ways).
 
-  It also sets an `id` on every feature: not all layers have a `fid` (813 answers
-  `fid: null`), and a feature without an id leaves its cluster row titled `undefined`,
-  because the title falls back through `attributes[clusterFeatureTitleProperty]`, `title`,
-  `name` to exactly that id. `AbstractFeatureProvider.getProviderFeature()` covers this with
-  a uuid; this interaction does not go through it.
+  It also fills two gaps `AbstractFeatureProvider.getProviderFeature()` would otherwise
+  cover, since this interaction does not go through it: an **`id`** on every feature (not
+  all layers return a `fid` — 813 answers `fid: null` — and a feature without an id leaves
+  its cluster row titled `undefined`), and the **`luxRowTitle`** property the cluster list
+  reads (see "Multiple features means a cluster list").
 
 - **`luxQueryService.ts`** — request building and the response post-processing, restored
   from the aggregated design. `buildPositionParams()` encodes the server's contract: boxes
@@ -170,15 +170,18 @@ renders that feature's template on the right. A single feature opens its panel d
 This is deliberate; the 2D portal's single stacked panel would require custom aggregation.
 
 Rows are titled `attributes[clusterFeatureTitleProperty] || attributes.title ||
-attributes.name || feature.getId()`, so the plugin sets
-`properties.clusterFeatureTitleProperty = 'label'` when claiming a layer — lux features
-carry a composed `label`, and without it most rows show a raw fid. Layers with no such
-attribute (PAG, for instance) still show ids.
+attributes.name || feature.getId()` (`featureInfo.js:211`, `:257-263`) — **one** configured
+key plus two hard-coded, case-sensitive ones. Lux layers do not agree on a naming: most
+compose a `label`, 813 carries `Name`, which that chain never matches. So the plugin points
+`clusterFeatureTitleProperty` at a synthetic `luxRowTitle` ({@link ROW_TITLE_PROPERTY}) and
+the interaction derives it per feature with `deriveRowTitle()` — first `label`, then `name`,
+then `title`, matched case-insensitively. `label` is first so layers that compose one are
+unaffected. A feature with none of them keeps a row titled by its id.
 
 ### Claiming the lux layers
 
 `index.ts` _clears_ `layer.featureProvider` on every layer `isLuxQueryLayer()` accepts, and
-sets `properties.clusterFeatureTitleProperty = 'label'`.
+sets `properties.clusterFeatureTitleProperty` to the synthetic `luxRowTitle`.
 
 Clearing is not housekeeping. themesync configures `featureInfo:
 { responseType: 'text/html' }` on those layers, which builds a provider that fabricates a
