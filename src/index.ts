@@ -1,17 +1,83 @@
-import type { VcsPlugin, VcsUiApp, PluginConfigEditor } from '@vcmap/ui';
+import { computed } from 'vue';
+import { createInstance } from 'i18next';
+import HttpBackend from 'i18next-http-backend';
+import { markVolatile, VectorLayer } from '@vcmap/core';
+import type { Layer } from '@vcmap/core';
+import type { VcsPlugin, VcsUiApp } from '@vcmap/ui';
+import { getLogger } from '@vcsuite/logger';
+import {
+  createLuxTplI18n,
+  createLuxTplI18next,
+} from '@geoportallux/feature-info-templates';
+import type { LuxTplConfig } from '@geoportallux/feature-info-templates';
 import { name, version, mapVersion } from '../package.json';
+import LuxProvider, { isLuxQueryLayer, ROW_TITLE } from './provider.js';
+import LuxView from './view.js';
 
-type PluginConfig = Record<never, never>;
-type PluginState = Record<never, never>;
+type PluginConfig = {
+  luxGetInfoUrl: string;
+  luxLocalesUrl: string;
+  templatesConfig: LuxTplConfig;
+};
 
-type MyPlugin = VcsPlugin<PluginConfig, PluginState>;
+type AuthPlugin = {
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  userState?: { user?: { mail?: string; role_id?: number } | null };
+};
+
+const GEOPORTAIL = 'https://map.geoportail.lu';
+
+// in code, not config.json: a deployed VC Map never reads the plugin's config.json
+function getDefaultOptions(): PluginConfig {
+  return {
+    luxGetInfoUrl: `${GEOPORTAIL}/getfeatureinfo`,
+    luxLocalesUrl: `${GEOPORTAIL}/assets/locales`,
+    templatesConfig: {
+      casipoUrl: `${GEOPORTAIL}/casipo`,
+      forageVirtuelUrl: `${GEOPORTAIL}/getRapportForageVirtuel`,
+      pagUrl: `${GEOPORTAIL}/pag`,
+      pdsUrl: `${GEOPORTAIL}/pds`,
+      shopUrl: 'https://shop.geoportail.lu',
+      shopIpv6Url: 'https://shop.app.geoportail.lu',
+      busWidgetUrl: `${GEOPORTAIL}/getbuswidget`,
+      downloadPdfUrl: `${GEOPORTAIL}/downloadpdf`,
+      downloadSketchUrl: `${GEOPORTAIL}/downloadsketch`,
+      downloadMeasurementUrl: `${GEOPORTAIL}/downloadmeasurement`,
+      thumbnailMeasurementUrl: `${GEOPORTAIL}/thumbnailmeasurement`,
+      downloadPagReportUrl: `${GEOPORTAIL}/pagreport`,
+      downloadResourceUrl: `${GEOPORTAIL}/downloadresource`,
+      downloadPreviewUrl: `${GEOPORTAIL}/previewmeasurement`,
+      qrUrl: `${GEOPORTAIL}/qr`,
+      v3ApiHost: `${GEOPORTAIL}/`,
+      solarEconomicAllowedRoleIds: [1, 1864],
+    },
+  };
+}
+
+// Takes a lux layer over: its own provider (themesync's text/html one) would open the
+// featureInfo2d iframe on clicks the aggregated query finds nothing for.
+function claimLayer(layer: Layer): void {
+  if (isLuxQueryLayer(layer)) {
+    layer.featureProvider?.destroy();
+    layer.featureProvider = undefined;
+    layer.properties.clusterFeatureTitleProperty = ROW_TITLE;
+  }
+}
 
 export default function plugin(
-  config: PluginConfig,
-  baseUrl: string,
-): MyPlugin {
-  // eslint-disable-next-line no-console
-  console.log(config, baseUrl);
+  config: Partial<PluginConfig>,
+): VcsPlugin<Partial<PluginConfig>, Record<never, never>> {
+  const defaults = getDefaultOptions();
+  const options: PluginConfig = {
+    ...defaults,
+    ...config,
+    templatesConfig: { ...defaults.templatesConfig, ...config.templatesConfig },
+  };
+  const listeners: (() => void)[] = [];
+  let view: LuxView | undefined;
+  let helperLayer: VectorLayer | undefined;
+  let app: VcsUiApp | undefined;
+
   return {
     get name(): string {
       return name;
@@ -22,57 +88,97 @@ export default function plugin(
     get mapVersion(): string {
       return mapVersion;
     },
-    initialize(vcsUiApp: VcsUiApp, state?: PluginState): Promise<void> {
-      // eslint-disable-next-line no-console
-      console.log(
-        'Called before loading the rest of the current context. Passed in the containing Vcs UI App ',
-        vcsUiApp,
-        state,
+    async initialize(vcsUiApp: VcsUiApp): Promise<void> {
+      app = vcsUiApp;
+      // WMSLayer.initialize() rebuilds the configured provider on activation
+      listeners.push(app.layers.stateChanged.addEventListener(claimLayer));
+
+      const i18next = createInstance().use(HttpBackend);
+      listeners.push(
+        app.localeChanged.addEventListener((locale) => {
+          i18next.changeLanguage(locale).catch(() => {});
+        }),
       );
-      return Promise.resolve();
+      view = new LuxView({
+        context: {
+          config: options.templatesConfig,
+          user: computed(() => {
+            const auth = vcsUiApp.plugins.getByKey(
+              '@geoportallux/lux-3dviewer-plugin-auth',
+            ) as AuthPlugin | undefined;
+            const user = auth?.userState?.user;
+            return user ? { mail: user.mail, roleId: user.role_id } : null;
+          }),
+          notify: (message, type = 'info'): void => {
+            vcsUiApp.notifier.add({ message, type });
+          },
+        },
+        i18n: createLuxTplI18n(i18next),
+      });
+      // without translations the templates render their keys
+      await createLuxTplI18next(
+        i18next,
+        `${options.luxLocalesUrl}/{{ns}}.{{lng}}.json`,
+        { lng: app.locale },
+      ).catch((e: unknown) => {
+        getLogger(name).error(String(e));
+      });
     },
     onVcsAppMounted(vcsUiApp: VcsUiApp): void {
-      // eslint-disable-next-line no-console
-      console.log(
-        'Called when the root UI component is mounted and managers are ready to accept components',
+      [...vcsUiApp.layers].forEach(claimLayer);
+      // VC Map finds providers only on active layers, so this one gets an empty,
+      // always-active layer of its own, kept out of app state by markVolatile
+      helperLayer = new VectorLayer({ name: `${name}:provider` });
+      markVolatile(helperLayer);
+      helperLayer.featureProvider = new LuxProvider(
         vcsUiApp,
+        options.luxGetInfoUrl,
+        view!,
       );
+      vcsUiApp.layers.add(helperLayer);
+      helperLayer.activate().catch((e: unknown) => {
+        getLogger(name).error(String(e));
+      });
     },
-    /**
-     * should return all default values of the configuration
-     */
-    getDefaultOptions(): PluginConfig {
-      return {};
+    getDefaultOptions,
+    toJSON(): Partial<PluginConfig> {
+      return { ...config };
     },
-    /**
-     * should return the plugin's serialization excluding all default values
-     */
-    toJSON(): PluginConfig {
-      // eslint-disable-next-line no-console
-      console.log('Called when serializing this plugin instance');
-      return {};
-    },
-    /**
-     * should return the plugins state
-     * @param {boolean} forUrl
-     * @returns {PluginState}
-     */
-    getState(forUrl?: boolean): PluginState {
-      // eslint-disable-next-line no-console
-      console.log('Called when collecting state, e.g. for create link', forUrl);
-      return {
-        prop: '*',
-      };
-    },
-    /**
-     * components for configuring the plugin and/ or custom items defined by the plugin
-     */
-    getConfigEditors(): PluginConfigEditor<object>[] {
-      return [];
-    },
+    // Lux layers get no provider back on destroy; the iframe fallback returns on reload.
     destroy(): void {
-      // eslint-disable-next-line no-console
-      console.log('hook to cleanup');
+      listeners.splice(0).forEach((remove) => {
+        remove();
+      });
+      if (helperLayer) {
+        app?.layers.remove(helperLayer);
+        helperLayer.destroy();
+      }
+    },
+    i18n: {
+      en: {
+        lux3dviewerPluginFeatureInfo: {
+          title: 'Information',
+          queryFailed: 'Could not retrieve feature information.',
+        },
+      },
+      fr: {
+        lux3dviewerPluginFeatureInfo: {
+          title: 'Informations',
+          queryFailed: 'Impossible de récupérer les informations.',
+        },
+      },
+      de: {
+        lux3dviewerPluginFeatureInfo: {
+          title: 'Informationen',
+          queryFailed: 'Informationen konnten nicht abgerufen werden.',
+        },
+      },
+      lb: {
+        lux3dviewerPluginFeatureInfo: {
+          title: 'Informatiounen',
+          queryFailed: 'Informatioune konnten net ofgeruff ginn.',
+        },
+      },
     },
   };
 }
