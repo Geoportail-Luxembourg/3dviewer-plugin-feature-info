@@ -117,6 +117,7 @@ export default class LuxProvider extends AbstractFeatureProvider {
   constructor(
     private _app: VcsUiApp,
     private _url: string,
+    private _credentials: RequestCredentials,
     private _view: AbstractFeatureInfoView,
   ) {
     super({});
@@ -146,9 +147,8 @@ export default class LuxProvider extends AbstractFeatureProvider {
       const params = new URLSearchParams(
         buildParams(map, [...names.keys()].join(), position),
       );
-      // credentials let the backend return role-specific definitions
       const response = await fetch(`${this._url}?${params}`, {
-        credentials: 'include',
+        credentials: this._credentials,
       });
       if (!response.ok) {
         throw new Error(`getfeatureinfo: HTTP ${response.status}`);

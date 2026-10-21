@@ -15,6 +15,7 @@ import LuxProvider, { isLuxQueryLayer, ROW_TITLE } from './provider.js';
 import LuxView from './view.js';
 
 type PluginConfig = {
+  credentials: RequestCredentials;
   luxGetInfoUrl: string;
   luxLocalesUrl: string;
   templatesConfig: LuxTplConfig;
@@ -27,9 +28,9 @@ type AuthPlugin = {
 
 const GEOPORTAIL = 'https://map.geoportail.lu';
 
-// in code, not config.json: a deployed VC Map never reads the plugin's config.json
 function getDefaultOptions(): PluginConfig {
   return {
+    credentials: 'include',
     luxGetInfoUrl: `${GEOPORTAIL}/getfeatureinfo`,
     luxLocalesUrl: `${GEOPORTAIL}/assets/locales`,
     templatesConfig: {
@@ -133,6 +134,7 @@ export default function plugin(
       helperLayer.featureProvider = new LuxProvider(
         vcsUiApp,
         options.luxGetInfoUrl,
+        options.credentials,
         view!,
       );
       vcsUiApp.layers.add(helperLayer);

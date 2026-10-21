@@ -55,7 +55,8 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
 - `src/view.ts` / `src/LuxWindow.vue` — `AbstractFeatureInfoView` passing
   `{ entry, layerName, runtime }` to a window that provides the templates' context and i18n and renders
   `getTemplateComponent(entry.template)` inside `.lux-tpl-root`.
-- `src/index.ts` — config defaults (in code: a deployed VC Map never reads `config.json`), the
+- `src/index.ts` — config defaults (fallbacks; the 3dviewer's app config plugin entry overrides
+  them, this repo's `config.json` only feeds `vcmplugin serve`/`preview`), the
   templates' i18next instance (geoportail locale files) and context (auth plugin user, VC Map
   notifier), `claimLayer` (clears each lux layer's own provider on every `stateChanged`, since
   `WMSLayer.initialize()` rebuilds it), and the volatile helper `VectorLayer` carrying the
