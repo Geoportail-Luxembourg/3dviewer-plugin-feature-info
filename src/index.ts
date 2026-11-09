@@ -11,7 +11,7 @@ import {
 } from '@geoportallux/feature-info-templates';
 import type { LuxTplConfig } from '@geoportallux/feature-info-templates';
 import { name, version, mapVersion } from '../package.json';
-import LuxProvider, { isLuxQueryLayer, ROW_TITLE } from './provider.js';
+import LuxProvider, { isLux2dLayer, ROW_TITLE } from './provider.js';
 import LuxView from './view.js';
 
 type PluginConfig = {
@@ -55,10 +55,10 @@ function getDefaultOptions(): PluginConfig {
   };
 }
 
-// Takes a lux layer over: its own provider (themesync's text/html one) would open the
-// featureInfo2d iframe on clicks the aggregated query finds nothing for.
+// Takes every 2D lux layer over: its own provider (themesync's text/html one) would open the
+// featureInfo2d iframe, and VC Map asks it even when the layer isn't queryable (allowPicking).
 function claimLayer(layer: Layer): void {
-  if (isLuxQueryLayer(layer)) {
+  if (isLux2dLayer(layer)) {
     layer.featureProvider?.destroy();
     layer.featureProvider = undefined;
     layer.properties.clusterFeatureTitleProperty = ROW_TITLE;

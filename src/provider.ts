@@ -32,10 +32,14 @@ const geoJson = new GeoJSON({
 
 export type LuxItem = { layerName: string; id: string; entry: FeatureInfoJSON };
 
+export function isLux2dLayer(layer: Layer): boolean {
+  const { luxId, is3DLayer } = layer.properties;
+  return luxId != null && !is3DLayer;
+}
+
 // themesync derives `allowPicking` from `is_queryable`, but forces it on for 3D tilesets.
 export function isLuxQueryLayer(layer: Layer): boolean {
-  const { luxId, is3DLayer } = layer.properties;
-  return luxId != null && !is3DLayer && layer.allowPicking;
+  return isLux2dLayer(layer) && layer.allowPicking;
 }
 
 /** One item per response feature: a layer with several definitions yields one row per definition's feature. */
