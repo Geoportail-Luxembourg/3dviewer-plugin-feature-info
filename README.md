@@ -10,12 +10,12 @@ To further develop the plugin run: `npm start` or `npm run preview -- --vcm [a-d
 
 ## Config parameters
 
-All params are optional and default to the production geoportail:
+All params are required (see `config.json` for production values):
 
-- `luxGetInfoUrl` - URL to the aggregated feature info API (default `https://map.geoportail.lu/getfeatureinfo`)
-- `luxLocalesUrl` - URL to the geoportail translation files used by the templates (default `https://map.geoportail.lu/assets/locales`)
-- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, …). Entries given here are merged over the defaults
-- `credentials` - RequestCredentials property for feature info requests: `omit`, `same-origin` or `include` (default). `include` is needed to get role-specific results when the viewer and the API are on different origins
+- `luxGetInfoUrl` - URL to the aggregated feature info API
+- `luxLocalesUrl` - URL to the geoportail translation files used by the templates
+- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, …)
+- `credentials` - RequestCredentials property for feature info requests: `omit`, `same-origin` or `include`. `include` is needed to get role-specific results when the viewer and the API are on different origins
 
 ## Feature info
 

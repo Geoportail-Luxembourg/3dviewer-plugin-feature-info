@@ -26,35 +26,6 @@ type AuthPlugin = {
   userState?: { user?: { mail?: string; role_id?: number } | null };
 };
 
-const GEOPORTAIL = 'https://map.geoportail.lu';
-
-function getDefaultOptions(): PluginConfig {
-  return {
-    credentials: 'include',
-    luxGetInfoUrl: `${GEOPORTAIL}/getfeatureinfo`,
-    luxLocalesUrl: `${GEOPORTAIL}/assets/locales`,
-    templatesConfig: {
-      casipoUrl: `${GEOPORTAIL}/casipo`,
-      forageVirtuelUrl: `${GEOPORTAIL}/getRapportForageVirtuel`,
-      pagUrl: `${GEOPORTAIL}/pag`,
-      pdsUrl: `${GEOPORTAIL}/pds`,
-      shopUrl: 'https://shop.geoportail.lu',
-      shopIpv6Url: 'https://shop.app.geoportail.lu',
-      busWidgetUrl: `${GEOPORTAIL}/getbuswidget`,
-      downloadPdfUrl: `${GEOPORTAIL}/downloadpdf`,
-      downloadSketchUrl: `${GEOPORTAIL}/downloadsketch`,
-      downloadMeasurementUrl: `${GEOPORTAIL}/downloadmeasurement`,
-      thumbnailMeasurementUrl: `${GEOPORTAIL}/thumbnailmeasurement`,
-      downloadPagReportUrl: `${GEOPORTAIL}/pagreport`,
-      downloadResourceUrl: `${GEOPORTAIL}/downloadresource`,
-      downloadPreviewUrl: `${GEOPORTAIL}/previewmeasurement`,
-      qrUrl: `${GEOPORTAIL}/qr`,
-      v3ApiHost: `${GEOPORTAIL}/`,
-      solarEconomicAllowedRoleIds: [1, 1864],
-    },
-  };
-}
-
 // Takes every 2D lux layer over: its own provider (themesync's text/html one) would open the
 // featureInfo2d iframe, and VC Map asks it even when the layer isn't queryable (allowPicking).
 function claimLayer(layer: Layer): void {
@@ -66,14 +37,8 @@ function claimLayer(layer: Layer): void {
 }
 
 export default function plugin(
-  config: Partial<PluginConfig>,
-): VcsPlugin<Partial<PluginConfig>, Record<never, never>> {
-  const defaults = getDefaultOptions();
-  const options: PluginConfig = {
-    ...defaults,
-    ...config,
-    templatesConfig: { ...defaults.templatesConfig, ...config.templatesConfig },
-  };
+  options: PluginConfig,
+): VcsPlugin<PluginConfig, Record<never, never>> {
   const listeners: (() => void)[] = [];
   let view: LuxView | undefined;
   let helperLayer: VectorLayer | undefined;
@@ -142,9 +107,8 @@ export default function plugin(
         getLogger(name).error(String(e));
       });
     },
-    getDefaultOptions,
-    toJSON(): Partial<PluginConfig> {
-      return { ...config };
+    toJSON(): PluginConfig {
+      return { ...options };
     },
     // Lux layers get no provider back on destroy; the iframe fallback returns on reload.
     destroy(): void {
