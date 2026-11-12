@@ -14,7 +14,7 @@ All params are required (see `config.json` for production values):
 
 - `luxGetInfoUrl` - URL to the aggregated feature info API
 - `luxLocalesUrl` - URL to the geoportail translation files used by the templates
-- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, …)
+- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, `geoportalUrl` of the 2D geoportal for map links, …)
 - `credentials` - RequestCredentials property for feature info requests: `omit`, `same-origin` or `include`. `include` is needed to get role-specific results when the viewer and the API are on different origins
 
 ## Feature info

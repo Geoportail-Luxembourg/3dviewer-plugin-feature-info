@@ -18,6 +18,7 @@
     "downloadPagReportUrl": "https://map.geoportail.lu/pagreport",
     "downloadResourceUrl": "https://map.geoportail.lu/downloadresource",
     "downloadPreviewUrl": "https://map.geoportail.lu/previewmeasurement",
+    "geoportalUrl": "https://map.geoportail.lu/",
     "qrUrl": "https://map.geoportail.lu/qr",
     "v3ApiHost": "https://map.geoportail.lu/",
     "solarEconomicAllowedRoleIds": [1, 1864]
