@@ -14,7 +14,7 @@ All params are required (see `config.json` for production values):
 
 - `luxGetInfoUrl` - URL to the aggregated feature info API
 - `luxLocalesUrl` - URL to the geoportail translation files used by the templates
-- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, `geoportalUrl` of the 2D geoportal for map links, …)
+- `templatesConfig` - URLs and role ids the templates need (report services, downloads, shop, QR, `profileUrl` of the elevation profile API, `geoportalUrl` of the 2D geoportal for map links, …)
 - `credentials` - RequestCredentials property for feature info requests: `omit`, `same-origin` or `include`. `include` is needed to get role-specific results when the viewer and the API are on different origins
 
 ## Feature info
@@ -25,6 +25,8 @@ The plugin answers for every lux layer with a `luxId` and `allowPicking` set by 
 - it removes the lux layers' own feature providers (themesync's `text/html` one), so they neither send requests of their own nor open the `featureInfo2d` iframe
 
 No themesync change is needed. Without this plugin, the layers keep the `featureInfo2d` iframe.
+
+Line features with a profile (e.g. hiking trails) show the elevation profile of `@geoportallux/feature-info-templates`, fed from `templatesConfig.profileUrl`. Hovering the chart marks the position on the map, pointing at the line on the map highlights the chart; the profile exports as CSV and the line as KML or GPX.
 
 A click on an active 3D tileset (e.g. buildings) does not query the 2D layers: VC Map only asks feature providers when nothing in 3D was picked.
 
