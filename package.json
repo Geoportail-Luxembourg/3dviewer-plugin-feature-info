@@ -1,6 +1,6 @@
 {
   "name": "@geoportallux/lux-3dviewer-plugin-feature-info",
-  "version": "1.0.0",
+  "version": "1.0.0-alpha.0",
   "description": "",
   "type": "module",
   "main": "dist/index.js",
@@ -60,5 +60,11 @@
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.11"
   },
-  "mapVersion": "^6.3"
+  "mapVersion": "^6.3",
+  "dependencies": {
+    "@geoportallux/feature-info-templates": "^1.0.0-alpha.0",
+    "@vcsuite/logger": "^1.0.1",
+    "i18next": "^26.4.2",
+    "i18next-http-backend": "^4.0.2"
+  }
 }

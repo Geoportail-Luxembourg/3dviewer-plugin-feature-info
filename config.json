@@ -1,3 +1,25 @@
 {
-  "name": "@geoportallux/lux-3dviewer-plugin-feature-info"
+  "name": "@geoportallux/lux-3dviewer-plugin-feature-info",
+  "credentials": "include",
+  "luxGetInfoUrl": "https://map.geoportail.lu/getfeatureinfo",
+  "luxLocalesUrl": "https://map.geoportail.lu/assets/locales",
+  "templatesConfig": {
+    "casipoUrl": "https://map.geoportail.lu/casipo",
+    "forageVirtuelUrl": "https://map.geoportail.lu/getRapportForageVirtuel",
+    "pagUrl": "https://map.geoportail.lu/pag",
+    "pdsUrl": "https://map.geoportail.lu/pds",
+    "shopUrl": "https://shop.geoportail.lu",
+    "shopIpv6Url": "https://shop.app.geoportail.lu",
+    "busWidgetUrl": "https://map.geoportail.lu/getbuswidget",
+    "downloadPdfUrl": "https://map.geoportail.lu/downloadpdf",
+    "downloadSketchUrl": "https://map.geoportail.lu/downloadsketch",
+    "downloadMeasurementUrl": "https://map.geoportail.lu/downloadmeasurement",
+    "thumbnailMeasurementUrl": "https://map.geoportail.lu/thumbnailmeasurement",
+    "downloadPagReportUrl": "https://map.geoportail.lu/pagreport",
+    "downloadResourceUrl": "https://map.geoportail.lu/downloadresource",
+    "downloadPreviewUrl": "https://map.geoportail.lu/previewmeasurement",
+    "qrUrl": "https://map.geoportail.lu/qr",
+    "v3ApiHost": "https://map.geoportail.lu/",
+    "solarEconomicAllowedRoleIds": [1, 1864]
+  }
 }

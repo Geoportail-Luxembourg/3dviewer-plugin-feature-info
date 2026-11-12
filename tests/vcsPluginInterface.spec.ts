@@ -118,8 +118,7 @@ describe('VcsPlugin Interface test', () => {
   describe('shadowing a plugin', () => {
     let app: VcsUiApp;
     let pluginInstance2:
-      | (TestPluginInstance & { [testPropSymbol]?: string })
-      | null;
+      (TestPluginInstance & { [testPropSymbol]?: string }) | null;
 
     beforeAll(async () => {
       app = new VcsUiApp();
