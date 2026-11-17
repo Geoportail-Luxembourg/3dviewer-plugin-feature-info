@@ -54,8 +54,8 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
   `featureInfoViewSymbol` and its own `FeatureInfoJSON` entry under `luxContentSymbol`.
 - `src/view.ts` / `src/LuxWindow.vue` — `AbstractFeatureInfoView` passing
   `{ entry, layerName, runtime }` to a window that provides the templates' context and i18n and renders
-  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`; it writes the KML/GPX files the
-  templates' profile asks for through `export`.
+  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`.
+- `src/exportFeature.ts` — the templates' `exportFeature`: writes the profile line as KML/GPX.
 - `src/profileMapAdapter.ts` — the templates' `profileMapAdapter`: the profile itself (fetch, chart, CSV, hover
   maths) is the package's; the plugin moves the marker on the helper layer and reports map
   pointer moves (a persistent MOVE interaction) in EPSG:2169.
