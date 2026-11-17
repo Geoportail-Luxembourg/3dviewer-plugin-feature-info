@@ -153,10 +153,8 @@ export default class LuxProvider extends AbstractFeatureProvider {
     return splitResponse(content, (e) =>
       this._app.layers.hasKey(e.layerLabel) ? e.layerLabel : undefined,
     ).map(({ layerName, id, entry }) => {
-      const attributes = entry.features[0].attributes ?? {};
       const feature = new Feature({
-        ...attributes,
-        [ROW_TITLE]: rowTitle(attributes),
+        [ROW_TITLE]: rowTitle(entry.features[0].attributes ?? {}),
       });
       if (entry.features[0].geometry) {
         feature.setGeometry(geoJson.readGeometry(entry.features[0].geometry));
