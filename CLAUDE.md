@@ -67,9 +67,12 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
   provider and the profile marker. It is pinned to mercator: `addFeatures()` reprojects from
   the app's default projection (WGS84 in the viewer) otherwise.
 
-Request params mirror the 2D client, including a synthetic viewport (`BBOX`/`WIDTH`/`HEIGHT`/
-`X`/`Y`). The backend uses it for the WMS relay and to turn its 10 px tolerance on REST-branch
-points/lines into metres — so a close-up 3D camera narrows what lines like 813 hit.
+The request, its fetch and the response's layer labels come from the templates package
+(`buildGetFeatureInfoParams`, `fetchFeatureInfo`, `normalizeFeatureInfo`), shared with the 2D
+app: boxes scale with VC Map's resolution at the click (`20 ×`/`1 ×`), and the viewport
+(`BBOX`/`WIDTH`/`HEIGHT`/`X`/`Y`) is a synthetic one centred on the click, as a tilted camera has
+no real extent. The backend uses it for the WMS relay and to turn its 10 px tolerance on
+REST-branch points/lines into metres — so a close-up 3D camera narrows what lines like 813 hit.
 
 `tests/vcsPluginInterface.spec.ts` is the stock conformance test: `i18n` must contain `en`
 and namespace entries under `lux3dviewerPluginFeatureInfo`.
