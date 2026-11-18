@@ -2,6 +2,10 @@
   "name": "@geoportallux/lux-3dviewer-plugin-feature-info",
   "version": "1.0.0-alpha.0",
   "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Geoportail-Luxembourg/3dviewer-plugin-feature-info.git"
+  },
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
