@@ -54,13 +54,18 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
   `featureInfoViewSymbol` and its own `FeatureInfoJSON` entry under `luxContentSymbol`.
 - `src/view.ts` / `src/LuxWindow.vue` — `AbstractFeatureInfoView` passing
   `{ entry, layerName, runtime }` to a window that provides the templates' context and i18n and renders
-  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`.
+  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`; it writes the KML/GPX files the
+  templates' profile asks for through `export`.
+- `src/profileMapAdapter.ts` — the templates' `profileMapAdapter`: the profile itself (fetch, chart, CSV, hover
+  maths) is the package's; the plugin moves the marker on the helper layer and reports map
+  pointer moves (a persistent MOVE interaction) in EPSG:2169.
 - `src/index.ts` — no config defaults: every option comes from the 3dviewer's app config
   plugin entry (this repo's `config.json` mirrors it for `vcmplugin serve`/`preview`), the
   templates' i18next instance (geoportail locale files) and context (auth plugin user, VC Map
   notifier), `claimLayer` (clears each lux layer's own provider on every `stateChanged`, since
   `WMSLayer.initialize()` rebuilds it), and the volatile helper `VectorLayer` carrying the
-  provider.
+  provider and the profile marker. It is pinned to mercator: `addFeatures()` reprojects from
+  the app's default projection (WGS84 in the viewer) otherwise.
 
 Request params mirror the 2D client, including a synthetic viewport (`BBOX`/`WIDTH`/`HEIGHT`/
 `X`/`Y`). The backend uses it for the WMS relay and to turn its 10 px tolerance on REST-branch

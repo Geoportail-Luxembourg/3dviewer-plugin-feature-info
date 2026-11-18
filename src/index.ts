@@ -1,7 +1,7 @@
 import { computed } from 'vue';
 import { createInstance } from 'i18next';
 import HttpBackend from 'i18next-http-backend';
-import { markVolatile, VectorLayer } from '@vcmap/core';
+import { markVolatile, mercatorProjection, VectorLayer } from '@vcmap/core';
 import type { Layer } from '@vcmap/core';
 import type { VcsPlugin, VcsUiApp } from '@vcmap/ui';
 import { getLogger } from '@vcsuite/logger';
@@ -13,6 +13,7 @@ import type { LuxTplConfig } from '@geoportallux/feature-info-templates';
 import { name, version, mapVersion } from '../package.json';
 import LuxProvider, { isLux2dLayer, ROW_TITLE } from './provider.js';
 import LuxView from './view.js';
+import createProfileMapAdapter from './profileMapAdapter.js';
 
 type PluginConfig = {
   credentials: RequestCredentials;
@@ -41,8 +42,13 @@ export default function plugin(
 ): VcsPlugin<PluginConfig, Record<never, never>> {
   const listeners: (() => void)[] = [];
   let view: LuxView | undefined;
-  let helperLayer: VectorLayer | undefined;
   let app: VcsUiApp | undefined;
+  // mercator: addFeatures() would otherwise reproject the marker from the app's default projection
+  const helperLayer = new VectorLayer({
+    name: `${name}:provider`,
+    projection: mercatorProjection.toJSON(),
+  });
+  markVolatile(helperLayer);
 
   return {
     get name(): string {
@@ -78,6 +84,10 @@ export default function plugin(
           notify: (message, type = 'info'): void => {
             vcsUiApp.notifier.add({ message, type });
           },
+          profileMapAdapter: createProfileMapAdapter(
+            helperLayer,
+            vcsUiApp.maps.eventHandler,
+          ),
         },
         i18n: createLuxTplI18n(i18next),
       });
@@ -92,10 +102,7 @@ export default function plugin(
     },
     onVcsAppMounted(vcsUiApp: VcsUiApp): void {
       [...vcsUiApp.layers].forEach(claimLayer);
-      // VC Map finds providers only on active layers, so this one gets an empty,
-      // always-active layer of its own, kept out of app state by markVolatile
-      helperLayer = new VectorLayer({ name: `${name}:provider` });
-      markVolatile(helperLayer);
+      // VC Map finds providers only on active layers, so this one gets an always-active layer of its own
       helperLayer.featureProvider = new LuxProvider(
         vcsUiApp,
         options.luxGetInfoUrl,
@@ -115,10 +122,8 @@ export default function plugin(
       listeners.splice(0).forEach((remove) => {
         remove();
       });
-      if (helperLayer) {
-        app?.layers.remove(helperLayer);
-        helperLayer.destroy();
-      }
+      app?.layers.remove(helperLayer);
+      helperLayer.destroy();
     },
     i18n: {
       en: {
