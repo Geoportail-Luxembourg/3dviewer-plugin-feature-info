@@ -14,6 +14,7 @@ import { name, version, mapVersion } from '../package.json';
 import LuxProvider, { isLux2dLayer, ROW_TITLE } from './provider.js';
 import LuxView from './view.js';
 import createProfileMapAdapter from './profileMapAdapter.js';
+import exportFeature from './exportFeature.js';
 
 type PluginConfig = {
   credentials: RequestCredentials;
@@ -88,6 +89,7 @@ export default function plugin(
             helperLayer,
             vcsUiApp.maps.eventHandler,
           ),
+          exportFeature,
         },
         i18n: createLuxTplI18n(i18next),
       });

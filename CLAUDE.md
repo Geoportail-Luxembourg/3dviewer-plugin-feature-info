@@ -54,8 +54,8 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
   `featureInfoViewSymbol` and its own `FeatureInfoJSON` entry under `luxContentSymbol`.
 - `src/view.ts` / `src/LuxWindow.vue` — `AbstractFeatureInfoView` passing
   `{ entry, layerName, runtime }` to a window that provides the templates' context and i18n and renders
-  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`; it writes the KML/GPX files the
-  templates' profile asks for through `export`.
+  `getTemplateComponent(entry.template)` inside `.lux-tpl-root`.
+- `src/exportFeature.ts` — the templates' `exportFeature`: writes the profile line as KML/GPX.
 - `src/profileMapAdapter.ts` — the templates' `profileMapAdapter`: the profile itself (fetch, chart, CSV, hover
   maths) is the package's; the plugin moves the marker on the helper layer and reports map
   pointer moves (a persistent MOVE interaction) in EPSG:2169.
@@ -67,9 +67,12 @@ tilesets before testing: a tileset hit vetoes all 2D provider queries.
   provider and the profile marker. It is pinned to mercator: `addFeatures()` reprojects from
   the app's default projection (WGS84 in the viewer) otherwise.
 
-Request params mirror the 2D client, including a synthetic viewport (`BBOX`/`WIDTH`/`HEIGHT`/
-`X`/`Y`). The backend uses it for the WMS relay and to turn its 10 px tolerance on REST-branch
-points/lines into metres — so a close-up 3D camera narrows what lines like 813 hit.
+The request, its fetch and the response's layer labels come from the templates package
+(`buildGetFeatureInfoParams`, `fetchFeatureInfo`, `normalizeFeatureInfo`), shared with the 2D
+app: boxes scale with VC Map's resolution at the click (`20 ×`/`1 ×`), and the viewport
+(`BBOX`/`WIDTH`/`HEIGHT`/`X`/`Y`) is a synthetic one centred on the click, as a tilted camera has
+no real extent. The backend uses it for the WMS relay and to turn its 10 px tolerance on
+REST-branch points/lines into metres — so a close-up 3D camera narrows what lines like 813 hit.
 
 `tests/vcsPluginInterface.spec.ts` is the stock conformance test: `i18n` must contain `en`
 and namespace entries under `lux3dviewerPluginFeatureInfo`.

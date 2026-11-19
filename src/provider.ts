@@ -9,10 +9,15 @@ import {
   Projection,
   vcsLayerName,
 } from '@vcmap/core';
-import type { Layer, VcsMap } from '@vcmap/core';
+import type { Layer } from '@vcmap/core';
 import { featureInfoViewSymbol, NotificationType } from '@vcmap/ui';
 import type { AbstractFeatureInfoView, VcsUiApp } from '@vcmap/ui';
 import { getLogger } from '@vcsuite/logger';
+import {
+  buildGetFeatureInfoParams,
+  fetchFeatureInfo,
+  normalizeFeatureInfo,
+} from '@geoportallux/feature-info-templates';
 import type { FeatureInfoJSON } from '@geoportallux/feature-info-templates';
 
 /** Carries a feature's own `FeatureInfoJSON` entry to the view. */
@@ -79,44 +84,6 @@ export function rowTitle(
   return undefined;
 }
 
-// Mirrors the 2D client: fixed metre boxes in 2169 (box1 points/lines, box2 polygons)
-// plus a synthetic viewport centred on the click for the backend's WMS relay.
-// Box sizes are fixed; make them config if a deployment needs other values.
-function buildParams(
-  map: VcsMap,
-  layers: string,
-  position: Coordinate,
-): Record<string, string> {
-  const [x, y] = Projection.transform(
-    luxProjection,
-    mercatorProjection,
-    position,
-  );
-  const box = (b: number): string => [x - b, y + b, x + b, y - b].join();
-  const { offsetWidth: w, offsetHeight: h } = map.mapElement;
-  const cx = Math.round(w / 2);
-  const cy = Math.round(h / 2);
-  const res = map.getCurrentResolution(position) || 1;
-  const zoom = Math.round(Math.log2(156543.03392804097 / res));
-  return {
-    layers,
-    box1: box(10),
-    box2: box(1),
-    srs: mercatorProjection.epsg,
-    zoom: String(Math.min(Math.max(zoom, 0), 22)),
-    BBOX: [
-      position[0] - cx * res,
-      position[1] - (h - cy) * res,
-      position[0] + (w - cx) * res,
-      position[1] + cy * res,
-    ].join(),
-    WIDTH: String(w),
-    HEIGHT: String(h),
-    X: String(cx),
-    Y: String(cy),
-  };
-}
-
 /**
  * Answers for every active lux layer with one aggregated `/getfeatureinfo` request.
  * Sits on a hidden helper layer; each feature names its own lux layer in `vcsLayerName`.
@@ -131,7 +98,10 @@ export default class LuxProvider extends AbstractFeatureProvider {
     super({});
   }
 
-  async getFeaturesByCoordinate(position: Coordinate): Promise<Feature[]> {
+  async getFeaturesByCoordinate(
+    position: Coordinate,
+    resolution: number,
+  ): Promise<Feature[]> {
     const map = this._app.maps.activeMap;
     // FeatureProviderInteraction asks on every click, tool on or off
     const tool = this._app.toolboxManager.get('featureInfo') as
@@ -152,16 +122,23 @@ export default class LuxProvider extends AbstractFeatureProvider {
     let content: FeatureInfoJSON[];
     map.mapElement.style.cursor = 'wait';
     try {
-      const params = new URLSearchParams(
-        buildParams(map, [...names.keys()].join(), position),
-      );
-      const response = await fetch(`${this._url}?${params}`, {
-        credentials: this._credentials,
+      const { offsetWidth: w, offsetHeight: h } = map.mapElement;
+      const params = buildGetFeatureInfoParams({
+        layers: [...names.keys()],
+        point: Projection.transform(
+          luxProjection,
+          mercatorProjection,
+          position,
+        ),
+        coordinate: position,
+        resolution: resolution || 1,
+        size: [w, h],
+        pixel: [w / 2, h / 2],
       });
-      if (!response.ok) {
-        throw new Error(`getfeatureinfo: HTTP ${response.status}`);
-      }
-      content = (await response.json()) as FeatureInfoJSON[];
+      content = normalizeFeatureInfo(
+        await fetchFeatureInfo(this._url, params, this._credentials),
+        (id) => names.get(id),
+      );
     } catch (e) {
       this._app.notifier.add({
         message: 'lux3dviewerPluginFeatureInfo.queryFailed',
@@ -173,14 +150,11 @@ export default class LuxProvider extends AbstractFeatureProvider {
       map.mapElement.style.cursor = '';
     }
 
-    return splitResponse(content, (e) => {
-      const name = names.get(e.layer) ?? e.layerLabel;
-      return this._app.layers.hasKey(name) ? name : undefined;
-    }).map(({ layerName, id, entry }) => {
-      const attributes = entry.features[0].attributes ?? {};
+    return splitResponse(content, (e) =>
+      this._app.layers.hasKey(e.layerLabel) ? e.layerLabel : undefined,
+    ).map(({ layerName, id, entry }) => {
       const feature = new Feature({
-        ...attributes,
-        [ROW_TITLE]: rowTitle(attributes),
+        [ROW_TITLE]: rowTitle(entry.features[0].attributes ?? {}),
       });
       if (entry.features[0].geometry) {
         feature.setGeometry(geoJson.readGeometry(entry.features[0].geometry));
